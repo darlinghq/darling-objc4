@@ -91,7 +91,7 @@ class nocopy_t {
 #   include <sys/time.h>
 #   include <sys/stat.h>
 #   include <sys/param.h>
-#   include <sys/reason.h>
+//#   include <sys/reason.h>
 #   include <mach/mach.h>
 #   include <mach/vm_param.h>
 #   include <mach/mach_time.h>
@@ -104,7 +104,7 @@ class nocopy_t {
 #   include <os/lock_private.h>
 #   include <libkern/OSAtomic.h>
 #   include <libkern/OSCacheControl.h>
-#   include <System/pthread_machdep.h>
+//#   include <System/pthread_machdep.h>
 #   include "objc-probes.h"  // generated dtrace probe definitions.
 
 // Some libc functions call objc_msgSend() 

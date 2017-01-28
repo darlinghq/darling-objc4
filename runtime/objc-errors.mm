@@ -200,7 +200,8 @@ void _objc_fatalv(uint64_t reason, uint64_t flags, const char *fmt, va_list ap)
         _Exit(1);
     }
     else {
-        abort_with_reason(OS_REASON_OBJC, reason, buf1, flags);
+        // abort_with_reason(OS_REASON_OBJC, reason, buf1, flags);
+		abort();
     }
 }
 
@@ -217,7 +218,7 @@ void _objc_fatal(const char *fmt, ...)
     va_list ap; 
     va_start(ap,fmt); 
     _objc_fatalv(OBJC_EXIT_REASON_UNSPECIFIED, 
-                 OS_REASON_FLAG_ONE_TIME_FAILURE, 
+                 /*OS_REASON_FLAG_ONE_TIME_FAILURE*/ 0, 
                  fmt, ap);
 }
 

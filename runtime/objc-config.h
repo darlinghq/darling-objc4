@@ -153,7 +153,7 @@
 #endif
 
 // Define SUPPORT_QOS_HACK to work around deadlocks due to QoS bugs.
-#if !__OBJC2__  ||  TARGET_OS_WIN32
+#if !__OBJC2__  ||  TARGET_OS_WIN32 || DARLING
 #   define SUPPORT_QOS_HACK 0
 #else
 #   define SUPPORT_QOS_HACK 1

@@ -489,7 +489,7 @@ map_images_nolock(unsigned mhCount, const char * const mhPaths[],
                 if (shouldRejectGCApp(hi)) {
                     _objc_fatal_with_reason
                         (OBJC_EXIT_REASON_GC_NOT_SUPPORTED, 
-                         OS_REASON_FLAG_CONSISTENT_FAILURE, 
+                         /*OS_REASON_FLAG_CONSISTENT_FAILURE*/ 0, 
                          "Objective-C garbage collection " 
                          "is no longer supported.");
                 }
@@ -530,7 +530,7 @@ map_images_nolock(unsigned mhCount, const char * const mhPaths[],
             if (mh->filetype != MH_EXECUTE  &&  shouldRejectGCImage(mh)) {
                 _objc_fatal_with_reason
                     (OBJC_EXIT_REASON_GC_NOT_SUPPORTED, 
-                     OS_REASON_FLAG_CONSISTENT_FAILURE, 
+                     /*OS_REASON_FLAG_CONSISTENT_FAILURE*/ 0, 
                      "%s requires Objective-C garbage collection "
                      "which is no longer supported.", hi->fname());
             }
