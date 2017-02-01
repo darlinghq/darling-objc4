@@ -13,11 +13,13 @@ add_definitions(-DTARGET_OS_MAC=1 -DTARGET_OS_OSX=1)
 add_definitions(-D__STDC_NO_ATOMICS__ -D__DYNAMIC__)
 #add_definitions(-D__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__=1080)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -D__DARWIN_UNIX03 -fPIC -fblocks")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -std=c++11 -D__DARWIN_UNIX03 -fPIC -fblocks -Wno-c++11-narrowing")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -O2 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch -fvisibility-inlines-hidden -fvisibility=hidden -fstrict-aliasing")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -O2 -mmacosx-version-min=10.9 -std=gnu++11 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch \
+			-fno-rtti -fno-exceptions -Wno-c++11-narrowing -fvisibility-inlines-hidden -fvisibility=hidden -Wno-invalid-offsetof -Wno-deprecated-objc-isa-usage \
+			-Wno-cast-of-sel-type -Wstrict-aliasing=2 -Wstrict-overflow=4 -fstrict-aliasing")
 
 add_definitions(-DOBJC_NO_GC) # For now (TODO)
-add_definitions(-DTARGET_OS_IPHONE=0 -Dtypeof=__typeof__)
+add_definitions(-DTARGET_OS_IPHONE=0 -DOS_OBJECT_USE_OBJC=0)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/src/external/libcxx/include)
