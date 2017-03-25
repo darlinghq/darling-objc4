@@ -91,6 +91,8 @@ set(objc_SRCS
 #set_target_properties(objc64 PROPERTIES COMPILE_FLAGS "-fobjc-runtime=macosx")
 
 set(DYLIB_INSTALL_NAME "/usr/lib/libobjc.A.dylib")
+set(DYLIB_COMPAT_VERSION "1.0.0")
+set(DYLIB_CURRENT_VERSION "228.0.0")
 add_circular(objc FAT
 	SOURCES ${objc_SRCS}
 	#OBJECTS $<TARGET_OBJECTS:objc32> $<TARGET_OBJECTS:objc64>
