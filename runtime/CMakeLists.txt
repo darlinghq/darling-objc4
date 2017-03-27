@@ -18,11 +18,11 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -O2 -mmacosx-versi
 			-fno-rtti -fno-exceptions -Wno-c++11-narrowing -fvisibility-inlines-hidden -fvisibility=hidden -Wno-invalid-offsetof -Wno-deprecated-objc-isa-usage \
 			-Wno-cast-of-sel-type -Wstrict-aliasing=2 -Wstrict-overflow=4 -fstrict-aliasing")
 
-add_definitions(-DOBJC_NO_GC) # For now (TODO)
+add_definitions(-DOBJC_NO_GC)
 add_definitions(-DTARGET_OS_IPHONE=0 -DOS_OBJECT_USE_OBJC=0)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${CMAKE_SOURCE_DIR}/src/external/libcxx/include)
+include_directories(BEFORE ${CMAKE_SOURCE_DIR}/src/external/libcxx/include)
 include_directories(${CMAKE_SOURCE_DIR}/src/external/libdispatch)
 include_directories(${CMAKE_SOURCE_DIR}/src/external/foundation/Headers)
 include_directories(${CMAKE_SOURCE_DIR}/src/external/libpthread/private)
