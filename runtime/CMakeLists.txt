@@ -3,6 +3,10 @@ project(objc4)
 cmake_minimum_required(VERSION 2.4.0)
 enable_language(C CXX ASM)
 
+add_compile_options(
+	-Wno-unused-command-line-argument
+)
+
 if(COMMAND cmake_policy)
 	cmake_policy(SET CMP0003 NEW)
 	cmake_policy(SET CMP0005 NEW)
