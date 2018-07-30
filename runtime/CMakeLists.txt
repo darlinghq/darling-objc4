@@ -17,6 +17,10 @@ add_definitions(-DTARGET_OS_MAC=1 -DTARGET_OS_OSX=1)
 add_definitions(-D__STDC_NO_ATOMICS__ -D__DYNAMIC__)
 #add_definitions(-D__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__=1080)
 
+# Override DEBUG CFLAGS because -O0 has been triggering strange bugs
+set(CMAKE_C_FLAGS_DEBUG "-ggdb")
+set(CMAKE_CXX_FLAGS_DEBUG "-ggdb")
+
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -O2 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch -fvisibility-inlines-hidden -fvisibility=hidden -fstrict-aliasing")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -O2 -mmacosx-version-min=10.9 -std=gnu++11 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch \
 			-fno-rtti -fno-exceptions -Wno-c++11-narrowing -fvisibility-inlines-hidden -fvisibility=hidden -Wno-invalid-offsetof -Wno-deprecated-objc-isa-usage \
