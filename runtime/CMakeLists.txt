@@ -92,10 +92,10 @@ set(objc_SRCS
 	Messengers.subproj/objc-msg-x86_64.S
 )
 
-#add_library(objc32 OBJECT ${objc_SRCS})
+#add_darling_object_library(objc32 ${objc_SRCS})
 #set_target_properties(objc32 PROPERTIES COMPILE_FLAGS "-fobjc-runtime=macosx-fragile")
 
-#add_library(objc64 OBJECT ${objc_SRCS})
+#add_darling_object_library(objc64 ${objc_SRCS})
 #set_target_properties(objc64 PROPERTIES COMPILE_FLAGS "-fobjc-runtime=macosx")
 
 set(DYLIB_INSTALL_NAME "/usr/lib/libobjc.A.dylib")
