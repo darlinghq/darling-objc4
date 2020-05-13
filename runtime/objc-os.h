@@ -136,45 +136,32 @@ subc(uintptr_t lhs, uintptr_t rhs, uintptr_t carryin, uintptr_t *carryout)
 #if __arm64__
 
 static ALWAYS_INLINE
-uintptr_t 
+uintptr_t
 LoadExclusive(uintptr_t *src)
 {
-    uintptr_t result;
-    asm("ldxr %x0, [%x1]" 
-        : "=r" (result) 
-        : "r" (src), "m" (*src));
-    return result;
+    return __builtin_arm_ldrex(src);
 }
 
 static ALWAYS_INLINE
-bool 
+bool
 StoreExclusive(uintptr_t *dst, uintptr_t oldvalue __unused, uintptr_t value)
 {
-    uint32_t result;
-    asm("stxr %w0, %x2, [%x3]" 
-        : "=r" (result), "=m" (*dst) 
-        : "r" (value), "r" (dst));
-    return !result;
+    return !__builtin_arm_strex(value, dst);
 }
 
 
 static ALWAYS_INLINE
-bool 
+bool
 StoreReleaseExclusive(uintptr_t *dst, uintptr_t oldvalue __unused, uintptr_t value)
 {
-    uint32_t result;
-    asm("stlxr %w0, %x2, [%x3]" 
-        : "=r" (result), "=m" (*dst) 
-        : "r" (value), "r" (dst));
-    return !result;
+    return !__builtin_arm_stlex(value, dst);
 }
 
 static ALWAYS_INLINE
-void 
-ClearExclusive(uintptr_t *dst)
+void
+ClearExclusive(uintptr_t *dst __unused)
 {
-    // pretend it writes to *dst for instruction ordering purposes
-    asm("clrex" : "=m" (*dst));
+    __builtin_arm_clrex();
 }
 
 
