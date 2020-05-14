@@ -28,18 +28,6 @@ add_definitions(-DOBJC_NO_GC)
 add_definitions(-DTARGET_OS_IPHONE=0 -DOS_OBJECT_USE_OBJC=0)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(BEFORE ${CMAKE_SOURCE_DIR}/src/external/libcxx/include)
-include_directories(${CMAKE_SOURCE_DIR}/src/external/libdispatch)
-include_directories(${CMAKE_SOURCE_DIR}/src/external/foundation/Headers)
-include_directories(${CMAKE_SOURCE_DIR}/src/external/libpthread/private)
-include_directories(${CMAKE_SOURCE_DIR}/src/libmalloc/include)
-include_directories(${CMAKE_SOURCE_DIR}/src/libunwind/include)
-include_directories(${CMAKE_SOURCE_DIR}/src/libc/gen)
-include_directories(${CMAKE_SOURCE_DIR}/src/dyld/include)
-include_directories(${CMAKE_SOURCE_DIR}/src/kernel/libsyscall)
-include_directories(${CMAKE_SOURCE_DIR}/src/launchd/liblaunch)
-include_directories(${CMAKE_SOURCE_DIR}/src/external/libclosure)
-#include_directories(${CMAKE_BINARY_DIR}/src/external/foundation/Headers)
 
 set(objc_SRCS
 	maptable.mm
