@@ -76,8 +76,6 @@ void _objc_error(id rcv, const char *fmt, va_list args)
 
 #include <_simple.h>
 
-OBJC_EXPORT void	(*_error)(id, const char *, va_list);
-
 // Return true if c is a UTF8 continuation byte
 static bool isUTF8Continuation(char c)
 {
@@ -85,7 +83,7 @@ static bool isUTF8Continuation(char c)
 }
 
 // Add "message" to any forthcoming crash log.
-static mutex_t crashlog_lock;
+mutex_t crashlog_lock;
 static void _objc_crashlog(const char *message)
 {
     char *newmsg;
@@ -160,7 +158,7 @@ static void _objc_syslog(const char *message)
 #if !__OBJC2__
 // used by ExceptionHandling.framework
 #endif
-__attribute__((noreturn))
+__attribute__((noreturn, cold))
 void _objc_error(id self, const char *fmt, va_list ap) 
 { 
     char *buf;
@@ -183,7 +181,7 @@ void __objc_error(id rcv, const char *fmt, ...)
     va_end(vp);
 }
 
-static __attribute__((noreturn))
+static __attribute__((noreturn, cold))
 void _objc_fatalv(uint64_t reason, uint64_t flags, const char *fmt, va_list ap)
 {
     char *buf1;
@@ -200,8 +198,8 @@ void _objc_fatalv(uint64_t reason, uint64_t flags, const char *fmt, va_list ap)
         _Exit(1);
     }
     else {
-        // abort_with_reason(OS_REASON_OBJC, reason, buf1, flags);
-		abort();
+        _objc_crashlog(buf1);
+        abort_with_reason(OS_REASON_OBJC, reason, buf1, flags);
     }
 }
 
@@ -218,7 +216,7 @@ void _objc_fatal(const char *fmt, ...)
     va_list ap; 
     va_start(ap,fmt); 
     _objc_fatalv(OBJC_EXIT_REASON_UNSPECIFIED, 
-                 /*OS_REASON_FLAG_ONE_TIME_FAILURE*/ 0, 
+                 OS_REASON_FLAG_ONE_TIME_FAILURE, 
                  fmt, ap);
 }
 

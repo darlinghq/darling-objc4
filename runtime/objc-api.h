@@ -28,6 +28,7 @@
 #include <Availability.h>
 #include <AvailabilityMacros.h>
 #include <TargetConditionals.h>
+#include <sys/types.h>
 
 #ifndef __has_feature
 #   define __has_feature(x) 0
@@ -41,6 +42,41 @@
 #   define __has_attribute(x) 0
 #endif
 
+#if !__has_feature(nullability)
+#   ifndef _Nullable
+#       define _Nullable
+#   endif
+#   ifndef _Nonnull
+#       define _Nonnull
+#   endif
+#   ifndef _Null_unspecified
+#       define _Null_unspecified
+#   endif
+#endif
+
+#ifndef __APPLE_BLEACH_SDK__
+# if __has_feature(attribute_availability_bridgeos)
+#   ifndef __BRIDGEOS_AVAILABLE
+#       define __BRIDGEOS_AVAILABLE(_vers) __OS_AVAILABILITY(bridgeos,introduced=_vers)
+#   endif
+#   ifndef __BRIDGEOS_DEPRECATED
+#       define __BRIDGEOS_DEPRECATED(_start, _dep, _msg) __BRIDGEOS_AVAILABLE(_start) __OS_AVAILABILITY_MSG(bridgeos,deprecated=_dep,_msg)
+#   endif
+#   ifndef __BRIDGEOS_UNAVAILABLE
+#       define __BRIDGEOS_UNAVAILABLE __OS_AVAILABILITY(bridgeos,unavailable)
+#   endif
+# else
+#   ifndef __BRIDGEOS_AVAILABLE
+#       define __BRIDGEOS_AVAILABLE(_vers)
+#   endif
+#   ifndef __BRIDGEOS_DEPRECATED
+#       define __BRIDGEOS_DEPRECATED(_start, _dep, _msg)
+#   endif
+#   ifndef __BRIDGEOS_UNAVAILABLE
+#       define __BRIDGEOS_UNAVAILABLE
+#   endif
+# endif
+#endif
 
 /*
  * OBJC_API_VERSION 0 or undef: Tiger and earlier API only
@@ -86,15 +122,67 @@
 /* OBJC_OLD_DISPATCH_PROTOTYPES == 0 enforces the rule that the dispatch 
  * functions must be cast to an appropriate function pointer type. */
 #if !defined(OBJC_OLD_DISPATCH_PROTOTYPES)
-#   define OBJC_OLD_DISPATCH_PROTOTYPES 1
+#   if __swift__
+        // Existing Swift code expects IMP to be Comparable.
+        // Variadic IMP is comparable via OpaquePointer; non-variadic IMP isn't.
+#       define OBJC_OLD_DISPATCH_PROTOTYPES 1
+#   else
+#       define OBJC_OLD_DISPATCH_PROTOTYPES 0
+#   endif
 #endif
 
 
 /* OBJC_AVAILABLE: shorthand for all-OS availability */
-#if !defined(OBJC_AVAILABLE)
-#   define OBJC_AVAILABLE(x, i, t, w)                \
-        __OSX_AVAILABLE(x)  __IOS_AVAILABLE(i)       \
-        __TVOS_AVAILABLE(t) __WATCHOS_AVAILABLE(w)
+#ifndef __APPLE_BLEACH_SDK__
+#   if !defined(OBJC_AVAILABLE)
+#       define OBJC_AVAILABLE(x, i, t, w, b)                            \
+            __OSX_AVAILABLE(x)  __IOS_AVAILABLE(i)  __TVOS_AVAILABLE(t) \
+            __WATCHOS_AVAILABLE(w)  __BRIDGEOS_AVAILABLE(b)
+#   endif
+#else
+#   if !defined(OBJC_AVAILABLE)
+#       define OBJC_AVAILABLE(x, i, t, w, b)                            \
+            __OSX_AVAILABLE(x)  __IOS_AVAILABLE(i)  __TVOS_AVAILABLE(t) \
+            __WATCHOS_AVAILABLE(w)
+#   endif
+#endif
+
+
+/* OBJC_OSX_DEPRECATED_OTHERS_UNAVAILABLE: Deprecated on OS X,
+ * unavailable everywhere else. */
+#ifndef __APPLE_BLEACH_SDK__
+#   if !defined(OBJC_OSX_DEPRECATED_OTHERS_UNAVAILABLE)
+#       define OBJC_OSX_DEPRECATED_OTHERS_UNAVAILABLE(_start, _dep, _msg) \
+            __OSX_DEPRECATED(_start, _dep, _msg)                          \
+            __IOS_UNAVAILABLE __TVOS_UNAVAILABLE                          \
+            __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE
+#   endif
+#else
+#   if !defined(OBJC_OSX_DEPRECATED_OTHERS_UNAVAILABLE)
+#       define OBJC_OSX_DEPRECATED_OTHERS_UNAVAILABLE(_start, _dep, _msg) \
+            __OSX_DEPRECATED(_start, _dep, _msg)                          \
+            __IOS_UNAVAILABLE __TVOS_UNAVAILABLE                          \
+            __WATCHOS_UNAVAILABLE
+#   endif
+#endif
+
+
+/* OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE: Available on OS X,
+ * unavailable everywhere else. */
+#ifndef __APPLE_BLEACH_SDK__
+#   if !defined(OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE)
+#       define OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(vers) \
+            __OSX_AVAILABLE(vers)                          \
+            __IOS_UNAVAILABLE __TVOS_UNAVAILABLE           \
+            __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE
+#    endif
+#else
+#   if !defined(OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE)
+#       define OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(vers) \
+            __OSX_AVAILABLE(vers)                          \
+            __IOS_UNAVAILABLE __TVOS_UNAVAILABLE           \
+            __WATCHOS_UNAVAILABLE
+#    endif
 #endif
 
 
@@ -118,7 +206,7 @@
 #       define OBJC2_UNAVAILABLE                                       \
             __OSX_DEPRECATED(10.5, 10.5, "not available in __OBJC2__") \
             __IOS_DEPRECATED(2.0, 2.0, "not available in __OBJC2__")   \
-            __TVOS_UNAVAILABLE __WATCHOS_UNAVAILABLE
+            __TVOS_UNAVAILABLE __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE
 #   endif
 #endif
 
@@ -227,6 +315,14 @@
 #else
 #define OBJC_ENUM(_type, _name) _type _name; enum
 #define OBJC_OPTIONS(_type, _name) _type _name; enum
+#endif
+
+#if !defined(OBJC_RETURNS_RETAINED)
+#   if __OBJC__ && __has_attribute(ns_returns_retained)
+#       define OBJC_RETURNS_RETAINED __attribute__((ns_returns_retained))
+#   else
+#       define OBJC_RETURNS_RETAINED
+#   endif
 #endif
 
 #endif

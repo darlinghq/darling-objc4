@@ -28,11 +28,14 @@
 
 #include "objc-private.h"
 #include "objc-loadmethod.h"
+#include "objc-cache.h"
 
 #if TARGET_OS_WIN32
 
 #include "objc-runtime-old.h"
 #include "objcrt.h"
+
+const fork_unsafe_lock_t fork_unsafe_lock;
 
 int monitor_init(monitor_t *c) 
 {
@@ -100,7 +103,7 @@ WINBOOL APIENTRY DllMain( HMODULE hModule,
     case DLL_PROCESS_ATTACH:
         environ_init();
         tls_init();
-        lock_init();
+        runtime_init();
         sel_init(3500);  // old selector heuristic
         exception_init();
         break;
@@ -251,17 +254,12 @@ static header_info * addHeader(const headerType *mhdr, const char *path, int &to
         // Verify image_info
         size_t info_size = 0;
         const objc_image_info *image_info = _getObjcImageInfo(mhdr,&info_size);
-        assert(image_info == hi->info());
+        ASSERT(image_info == hi->info());
 #endif
     }
     else 
     {
         // Didn't find an hinfo in the dyld shared cache.
-
-        // Weed out duplicates
-        for (hi = FirstHeader; hi; hi = hi->getNext()) {
-            if (mhdr == hi->mhdr()) return NULL;
-        }
 
         // Locate the __OBJC segment
         size_t info_size = 0;
@@ -340,7 +338,7 @@ linksToLibrary(const header_info *hi, const char *name)
 **********************************************************************/
 static bool shouldRejectGCApp(const header_info *hi)
 {
-    assert(hi->mhdr()->filetype == MH_EXECUTE);
+    ASSERT(hi->mhdr()->filetype == MH_EXECUTE);
 
     if (!hi->info()->supportsGC()) {
         // App does not use GC. Don't reject it.
@@ -384,7 +382,7 @@ static bool shouldRejectGCApp(const header_info *hi)
 **********************************************************************/
 static bool shouldRejectGCImage(const headerType *mhdr)
 {
-    assert(mhdr->filetype != MH_EXECUTE);
+    ASSERT(mhdr->filetype != MH_EXECUTE);
 
     objc_image_info *image_info;
     size_t size;
@@ -415,6 +413,25 @@ static bool shouldRejectGCImage(const headerType *mhdr)
 
 // SUPPORT_GC_COMPAT
 #endif
+
+
+// Swift currently adds 4 callbacks.
+static GlobalSmallVector<objc_func_loadImage, 4> loadImageFuncs;
+
+void objc_addLoadImageFunc(objc_func_loadImage _Nonnull func) {
+    // Not supported on the old runtime. Not that the old runtime is supported anyway.
+#if __OBJC2__
+    mutex_locker_t lock(runtimeLock);
+    
+    // Call it with all the existing images first.
+    for (auto header = FirstHeader; header; header = header->getNext()) {
+        func((struct mach_header *)header->mhdr());
+    }
+    
+    // Add it to the vector for future loads.
+    loadImageFuncs.append(func);
+#endif
+}
 
 
 /***********************************************************************
@@ -489,7 +506,7 @@ map_images_nolock(unsigned mhCount, const char * const mhPaths[],
                 if (shouldRejectGCApp(hi)) {
                     _objc_fatal_with_reason
                         (OBJC_EXIT_REASON_GC_NOT_SUPPORTED, 
-                         /*OS_REASON_FLAG_CONSISTENT_FAILURE*/ 0, 
+                         OS_REASON_FLAG_CONSISTENT_FAILURE, 
                          "Objective-C garbage collection " 
                          "is no longer supported.");
                 }
@@ -530,12 +547,45 @@ map_images_nolock(unsigned mhCount, const char * const mhPaths[],
             if (mh->filetype != MH_EXECUTE  &&  shouldRejectGCImage(mh)) {
                 _objc_fatal_with_reason
                     (OBJC_EXIT_REASON_GC_NOT_SUPPORTED, 
-                     /*OS_REASON_FLAG_CONSISTENT_FAILURE*/ 0, 
+                     OS_REASON_FLAG_CONSISTENT_FAILURE, 
                      "%s requires Objective-C garbage collection "
                      "which is no longer supported.", hi->fname());
             }
         }
 #endif
+
+#if TARGET_OS_OSX
+        // Disable +initialize fork safety if the app is too old (< 10.13).
+        // Disable +initialize fork safety if the app has a
+        //   __DATA,__objc_fork_ok section.
+
+        if (dyld_get_program_sdk_version() < DYLD_MACOSX_VERSION_10_13) {
+            DisableInitializeForkSafety = true;
+            if (PrintInitializing) {
+                _objc_inform("INITIALIZE: disabling +initialize fork "
+                             "safety enforcement because the app is "
+                             "too old (SDK version " SDK_FORMAT ")",
+                             FORMAT_SDK(dyld_get_program_sdk_version()));
+            }
+        }
+
+        for (uint32_t i = 0; i < hCount; i++) {
+            auto hi = hList[i];
+            auto mh = hi->mhdr();
+            if (mh->filetype != MH_EXECUTE) continue;
+            unsigned long size;
+            if (getsectiondata(hi->mhdr(), "__DATA", "__objc_fork_ok", &size)) {
+                DisableInitializeForkSafety = true;
+                if (PrintInitializing) {
+                    _objc_inform("INITIALIZE: disabling +initialize fork "
+                                 "safety enforcement because the app has "
+                                 "a __DATA,__objc_fork_ok section");
+                }
+            }
+            break;  // assume only one MH_EXECUTE image
+        }
+#endif
+
     }
 
     if (hCount > 0) {
@@ -543,6 +593,13 @@ map_images_nolock(unsigned mhCount, const char * const mhPaths[],
     }
 
     firstTime = NO;
+    
+    // Call image load funcs after everything is set up.
+    for (auto func : loadImageFuncs) {
+        for (uint32_t i = 0; i < mhCount; i++) {
+            func(mhdrs[i]);
+        }
+    }
 }
 
 
@@ -596,10 +653,254 @@ unmap_image_nolock(const struct mach_header *mh)
 static void static_init()
 {
     size_t count;
-    Initializer *inits = getLibobjcInitializers(&_mh_dylib_header, &count);
+    auto inits = getLibobjcInitializers(&_mh_dylib_header, &count);
     for (size_t i = 0; i < count; i++) {
         inits[i]();
     }
+}
+
+
+/***********************************************************************
+* _objc_atfork_prepare
+* _objc_atfork_parent
+* _objc_atfork_child
+* Allow ObjC to be used between fork() and exec().
+* libc requires this because it has fork-safe functions that use os_objects.
+*
+* _objc_atfork_prepare() acquires all locks.
+* _objc_atfork_parent() releases the locks again.
+* _objc_atfork_child() forcibly resets the locks.
+**********************************************************************/
+
+// Declare lock ordering.
+#if LOCKDEBUG
+__attribute__((constructor))
+static void defineLockOrder()
+{
+    // Every lock precedes crashlog_lock
+    // on the assumption that fatal errors could be anywhere.
+    lockdebug_lock_precedes_lock(&loadMethodLock, &crashlog_lock);
+    lockdebug_lock_precedes_lock(&classInitLock, &crashlog_lock);
+#if __OBJC2__
+    lockdebug_lock_precedes_lock(&runtimeLock, &crashlog_lock);
+    lockdebug_lock_precedes_lock(&DemangleCacheLock, &crashlog_lock);
+#else
+    lockdebug_lock_precedes_lock(&classLock, &crashlog_lock);
+    lockdebug_lock_precedes_lock(&methodListLock, &crashlog_lock);
+    lockdebug_lock_precedes_lock(&NXUniqueStringLock, &crashlog_lock);
+    lockdebug_lock_precedes_lock(&impLock, &crashlog_lock);
+#endif
+    lockdebug_lock_precedes_lock(&selLock, &crashlog_lock);
+#if CONFIG_USE_CACHE_LOCK
+    lockdebug_lock_precedes_lock(&cacheUpdateLock, &crashlog_lock);
+#endif
+    lockdebug_lock_precedes_lock(&objcMsgLogLock, &crashlog_lock);
+    lockdebug_lock_precedes_lock(&AltHandlerDebugLock, &crashlog_lock);
+    lockdebug_lock_precedes_lock(&AssociationsManagerLock, &crashlog_lock);
+    SideTableLocksPrecedeLock(&crashlog_lock);
+    PropertyLocks.precedeLock(&crashlog_lock);
+    StructLocks.precedeLock(&crashlog_lock);
+    CppObjectLocks.precedeLock(&crashlog_lock);
+
+    // loadMethodLock precedes everything
+    // because it is held while +load methods run
+    lockdebug_lock_precedes_lock(&loadMethodLock, &classInitLock);
+#if __OBJC2__
+    lockdebug_lock_precedes_lock(&loadMethodLock, &runtimeLock);
+    lockdebug_lock_precedes_lock(&loadMethodLock, &DemangleCacheLock);
+#else
+    lockdebug_lock_precedes_lock(&loadMethodLock, &methodListLock);
+    lockdebug_lock_precedes_lock(&loadMethodLock, &classLock);
+    lockdebug_lock_precedes_lock(&loadMethodLock, &NXUniqueStringLock);
+    lockdebug_lock_precedes_lock(&loadMethodLock, &impLock);
+#endif
+    lockdebug_lock_precedes_lock(&loadMethodLock, &selLock);
+#if CONFIG_USE_CACHE_LOCK
+    lockdebug_lock_precedes_lock(&loadMethodLock, &cacheUpdateLock);
+#endif
+    lockdebug_lock_precedes_lock(&loadMethodLock, &objcMsgLogLock);
+    lockdebug_lock_precedes_lock(&loadMethodLock, &AltHandlerDebugLock);
+    lockdebug_lock_precedes_lock(&loadMethodLock, &AssociationsManagerLock);
+    SideTableLocksSucceedLock(&loadMethodLock);
+    PropertyLocks.succeedLock(&loadMethodLock);
+    StructLocks.succeedLock(&loadMethodLock);
+    CppObjectLocks.succeedLock(&loadMethodLock);
+
+    // PropertyLocks and CppObjectLocks and AssociationManagerLock 
+    // precede everything because they are held while objc_retain() 
+    // or C++ copy are called.
+    // (StructLocks do not precede everything because it calls memmove only.)
+    auto PropertyAndCppObjectAndAssocLocksPrecedeLock = [&](const void *lock) {
+        PropertyLocks.precedeLock(lock);
+        CppObjectLocks.precedeLock(lock);
+        lockdebug_lock_precedes_lock(&AssociationsManagerLock, lock);
+    };
+#if __OBJC2__
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&runtimeLock);
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&DemangleCacheLock);
+#else
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&methodListLock);
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&classLock);
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&NXUniqueStringLock);
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&impLock);
+#endif
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&classInitLock);
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&selLock);
+#if CONFIG_USE_CACHE_LOCK
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&cacheUpdateLock);
+#endif
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&objcMsgLogLock);
+    PropertyAndCppObjectAndAssocLocksPrecedeLock(&AltHandlerDebugLock);
+
+    SideTableLocksSucceedLocks(PropertyLocks);
+    SideTableLocksSucceedLocks(CppObjectLocks);
+    SideTableLocksSucceedLock(&AssociationsManagerLock);
+
+    PropertyLocks.precedeLock(&AssociationsManagerLock);
+    CppObjectLocks.precedeLock(&AssociationsManagerLock);
+    
+#if __OBJC2__
+    lockdebug_lock_precedes_lock(&classInitLock, &runtimeLock);
+#endif
+
+#if __OBJC2__
+    // Runtime operations may occur inside SideTable locks
+    // (such as storeWeak calling getMethodImplementation)
+    SideTableLocksPrecedeLock(&runtimeLock);
+    SideTableLocksPrecedeLock(&classInitLock);
+    // Some operations may occur inside runtimeLock.
+    lockdebug_lock_precedes_lock(&runtimeLock, &selLock);
+#if CONFIG_USE_CACHE_LOCK
+    lockdebug_lock_precedes_lock(&runtimeLock, &cacheUpdateLock);
+#endif
+    lockdebug_lock_precedes_lock(&runtimeLock, &DemangleCacheLock);
+#else
+    // Runtime operations may occur inside SideTable locks
+    // (such as storeWeak calling getMethodImplementation)
+    SideTableLocksPrecedeLock(&methodListLock);
+    SideTableLocksPrecedeLock(&classInitLock);
+    // Method lookup and fixup.
+    lockdebug_lock_precedes_lock(&methodListLock, &classLock);
+    lockdebug_lock_precedes_lock(&methodListLock, &selLock);
+#if CONFIG_USE_CACHE_LOCK
+    lockdebug_lock_precedes_lock(&methodListLock, &cacheUpdateLock);
+#endif
+    lockdebug_lock_precedes_lock(&methodListLock, &impLock);
+    lockdebug_lock_precedes_lock(&classLock, &selLock);
+    lockdebug_lock_precedes_lock(&classLock, &cacheUpdateLock);
+#endif
+
+    // Striped locks use address order internally.
+    SideTableDefineLockOrder();
+    PropertyLocks.defineLockOrder();
+    StructLocks.defineLockOrder();
+    CppObjectLocks.defineLockOrder();
+}
+// LOCKDEBUG
+#endif
+
+static bool ForkIsMultithreaded;
+void _objc_atfork_prepare()
+{
+    // Save threaded-ness for the child's use.
+    ForkIsMultithreaded = pthread_is_threaded_np();
+
+    lockdebug_assert_no_locks_locked();
+    lockdebug_setInForkPrepare(true);
+
+    loadMethodLock.lock();
+    PropertyLocks.lockAll();
+    CppObjectLocks.lockAll();
+    AssociationsManagerLock.lock();
+    SideTableLockAll();
+    classInitLock.enter();
+#if __OBJC2__
+    runtimeLock.lock();
+    DemangleCacheLock.lock();
+#else
+    methodListLock.lock();
+    classLock.lock();
+    NXUniqueStringLock.lock();
+    impLock.lock();
+#endif
+    selLock.lock();
+#if CONFIG_USE_CACHE_LOCK
+    cacheUpdateLock.lock();
+#endif
+    objcMsgLogLock.lock();
+    AltHandlerDebugLock.lock();
+    StructLocks.lockAll();
+    crashlog_lock.lock();
+
+    lockdebug_assert_all_locks_locked();
+    lockdebug_setInForkPrepare(false);
+}
+
+void _objc_atfork_parent()
+{
+    lockdebug_assert_all_locks_locked();
+
+    CppObjectLocks.unlockAll();
+    StructLocks.unlockAll();
+    PropertyLocks.unlockAll();
+    AssociationsManagerLock.unlock();
+    AltHandlerDebugLock.unlock();
+    objcMsgLogLock.unlock();
+    crashlog_lock.unlock();
+    loadMethodLock.unlock();
+#if CONFIG_USE_CACHE_LOCK
+    cacheUpdateLock.unlock();
+#endif
+    selLock.unlock();
+    SideTableUnlockAll();
+#if __OBJC2__
+    DemangleCacheLock.unlock();
+    runtimeLock.unlock();
+#else
+    impLock.unlock();
+    NXUniqueStringLock.unlock();
+    methodListLock.unlock();
+    classLock.unlock();
+#endif
+    classInitLock.leave();
+
+    lockdebug_assert_no_locks_locked();
+}
+
+void _objc_atfork_child()
+{
+    // Turn on +initialize fork safety enforcement if applicable.
+    if (ForkIsMultithreaded  &&  !DisableInitializeForkSafety) {
+        MultithreadedForkChild = true;
+    }
+
+    lockdebug_assert_all_locks_locked();
+
+    CppObjectLocks.forceResetAll();
+    StructLocks.forceResetAll();
+    PropertyLocks.forceResetAll();
+    AssociationsManagerLock.forceReset();
+    AltHandlerDebugLock.forceReset();
+    objcMsgLogLock.forceReset();
+    crashlog_lock.forceReset();
+    loadMethodLock.forceReset();
+#if CONFIG_USE_CACHE_LOCK
+    cacheUpdateLock.forceReset();
+#endif
+    selLock.forceReset();
+    SideTableForceResetAll();
+#if __OBJC2__
+    DemangleCacheLock.forceReset();
+    runtimeLock.forceReset();
+#else
+    impLock.forceReset();
+    NXUniqueStringLock.forceReset();
+    methodListLock.forceReset();
+    classLock.forceReset();
+#endif
+    classInitLock.forceReset();
+
+    lockdebug_assert_no_locks_locked();
 }
 
 
@@ -619,10 +920,16 @@ void _objc_init(void)
     environ_init();
     tls_init();
     static_init();
-    lock_init();
+    runtime_init();
     exception_init();
+    cache_init();
+    _imp_implementationWithBlock_init();
 
-    _dyld_objc_notify_register(&map_2_images, load_images, unmap_image);
+    _dyld_objc_notify_register(&map_images, load_images, unmap_image);
+
+#if __OBJC2__
+    didCallDyldNotifyRegister = true;
+#endif
 }
 
 
