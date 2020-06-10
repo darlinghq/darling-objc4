@@ -16,11 +16,11 @@ add_definitions(-D__STDC_NO_ATOMICS__)
 #add_definitions(-D__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__=1080)
 
 # Override DEBUG CFLAGS because -O0 has been triggering strange bugs
-set(CMAKE_C_FLAGS_DEBUG "-ggdb")
-set(CMAKE_CXX_FLAGS_DEBUG "-ggdb")
+set(CMAKE_C_FLAGS_DEBUG "-ggdb -DOBJC_IS_DEBUG_BUILD=1")
+set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -DOBJC_IS_DEBUG_BUILD=1")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -O2 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch -fvisibility-inlines-hidden -fvisibility=hidden -fstrict-aliasing")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -O2 -mmacosx-version-min=10.9 -std=gnu++11 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch \
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -O2 -std=gnu++14 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch \
 			-fno-rtti -fno-exceptions -Wno-c++11-narrowing -fvisibility-inlines-hidden -fvisibility=hidden -Wno-invalid-offsetof -Wno-deprecated-objc-isa-usage \
 			-Wno-cast-of-sel-type -Wstrict-aliasing=2 -Wstrict-overflow=4 -fstrict-aliasing")
 
@@ -52,7 +52,6 @@ set(objc_SRCS
 	objc-opt.mm
 	objc-os.mm
 	objc-references.mm
-	#objcrt.c # Windows only
 	objc-runtime.mm
 	objc-runtime-new.mm
 	objc-runtime-old.mm
@@ -62,15 +61,13 @@ set(objc_SRCS
 	objc-sync.mm
 	objc-typeencoding.mm
 	objc-weak.mm
+	objc-zalloc.mm
 	Object.mm
 	Protocol.mm
-	a1a2-blocktramps-arm.S
-	a1a2-blocktramps-arm64.S
-	a1a2-blocktramps-i386.S
-	a1a2-blocktramps-x86_64.S
-	a2a3-blocktramps-arm.S
-	a2a3-blocktramps-i386.S
-	a2a3-blocktramps-x86_64.S
+	objc-blocktramps-arm.S
+	objc-blocktramps-arm64.S
+	objc-blocktramps-i386.S
+	objc-blocktramps-x86_64.S
 	objc-sel-table.S
 	Messengers.subproj/objc-msg-arm.S
 	Messengers.subproj/objc-msg-arm64.S
@@ -78,18 +75,11 @@ set(objc_SRCS
 	Messengers.subproj/objc-msg-x86_64.S
 )
 
-#add_darling_object_library(objc32 ${objc_SRCS})
-#set_target_properties(objc32 PROPERTIES COMPILE_FLAGS "-fobjc-runtime=macosx-fragile")
-
-#add_darling_object_library(objc64 ${objc_SRCS})
-#set_target_properties(objc64 PROPERTIES COMPILE_FLAGS "-fobjc-runtime=macosx")
-
 set(DYLIB_INSTALL_NAME "/usr/lib/libobjc.A.dylib")
 set(DYLIB_COMPAT_VERSION "1.0.0")
 set(DYLIB_CURRENT_VERSION "228.0.0")
 add_circular(objc FAT
 	SOURCES ${objc_SRCS}
-	#OBJECTS $<TARGET_OBJECTS:objc32> $<TARGET_OBJECTS:objc64>
 	SIBLINGS system_c system_malloc system_dyld system_blocks unwind system_m macho platform system_kernel system_pthread compiler_rt libdispatch_shared
 	DEPENDENCIES cxx
 )
