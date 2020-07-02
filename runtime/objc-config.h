@@ -164,7 +164,7 @@
 
 // Define HAVE_TASK_RESTARTABLE_RANGES to enable usage of
 // task_restartable_ranges_synchronize()
-#if TARGET_OS_SIMULATOR || defined(__i386__) || defined(__arm__) || !TARGET_OS_MAC
+#if TARGET_OS_SIMULATOR || defined(__i386__) || defined(__arm__) || !TARGET_OS_MAC || defined(DARLING)
 #   define HAVE_TASK_RESTARTABLE_RANGES 0
 #else
 #   define HAVE_TASK_RESTARTABLE_RANGES 1
