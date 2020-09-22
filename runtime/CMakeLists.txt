@@ -24,7 +24,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -O2 -std=gnu++14 -
 			-Wno-cast-of-sel-type -Wstrict-aliasing=2 -Wstrict-overflow=4 -fstrict-aliasing")
 
 add_definitions(-DOBJC_NO_GC -DOBJC_IS_DEBUG_BUILD=1)
-add_definitions(-DTARGET_OS_IPHONE=0 -DOS_OBJECT_USE_OBJC=0)
+add_definitions(-DTARGET_OS_IPHONE=0 -DOS_OBJECT_USE_OBJC=0 -D_LIBCPP_VISIBLE="")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -80,7 +80,16 @@ set(DYLIB_CURRENT_VERSION "228.0.0")
 add_circular(objc FAT
 	SOURCES ${objc_SRCS}
 	SIBLINGS system_c system_malloc system_dyld system_blocks unwind system_m macho platform system_kernel system_pthread compiler_rt libdispatch_shared
-	DEPENDENCIES cxx
+	DEPENDENCIES cxx cxxabi
+)
+target_link_options(objc PRIVATE
+	-Wl,-sectalign,__DATA,__objc_data,0x1000
+	"-Wl,-interposable_list,${CMAKE_CURRENT_SOURCE_DIR}/../interposable.txt"
+
+	# not listed anywhere in Apple's project, and there's no `__mod_init_func` or `__objc_init_func` sections in the `libobjc` bundled with macOS,
+	# but it's necessary for libobjc to initialize it's own C++ globals before the runtime is initialized
+	# (i'm guessing they renamed the section so that the functions in it wouldn't get called twice: once by libobjc and once by dyld)
+	-Wl,-rename_section,__DATA,__mod_init_func,__DATA,__objc_init_func
 )
 set_target_properties(objc PROPERTIES OUTPUT_NAME "objc.A")
 InstallSymlink("libobjc.A.dylib" "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/lib/libobjc.dylib")
