@@ -94,4 +94,21 @@ target_link_options(objc PRIVATE
 set_target_properties(objc PROPERTIES OUTPUT_NAME "objc.A")
 InstallSymlink("libobjc.A.dylib" "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/lib/libobjc.dylib")
 
-install(TARGETS objc DESTINATION libexec/darling/usr/lib)
+set(DYLIB_INSTALL_NAME "/usr/lib/libobjc-trampolines.dylib")
+set(DYLIB_COMPAT_VERSION "1.0.0")
+set(DYLIB_CURRENT_VERSION "228.0.0")
+add_darling_library(objc-trampolines
+	dummy.c # necessary to trick CMake into creating a dylib using only assembly files
+	objc-blocktramps-arm.S
+	objc-blocktramps-i386.S
+	objc-blocktramps-x86_64.S
+	objc-blocktramps-arm64.S
+)
+target_link_libraries(objc-trampolines PRIVATE
+	system
+)
+target_link_options(objc-trampolines PRIVATE
+	-Wl,-not_for_dyld_shared_cache
+)
+
+install(TARGETS objc objc-trampolines DESTINATION libexec/darling/usr/lib)
