@@ -1978,6 +1978,16 @@ void arr_init(void)
     _objc_associations_init();
 }
 
+#ifdef DARLING
+// see libdispatch
+#if __has_attribute(objc_nonlazy_class)
+#define NONLAZY_CLASS      __attribute__((objc_nonlazy_class))
+#define NONLAZY_CLASS_LOAD
+#else
+#define NONLAZY_CLASS
+#define NONLAZY_CLASS_LOAD + (void)load {}
+#endif
+#endif
 
 #if SUPPORT_TAGGED_POINTERS
 
@@ -1987,8 +1997,15 @@ void arr_init(void)
 @interface __NSUnrecognizedTaggedPointer : NSObject
 @end
 
+#ifdef DARLING
+NONLAZY_CLASS
+#else
 __attribute__((objc_nonlazy_class))
+#endif
 @implementation __NSUnrecognizedTaggedPointer
+#ifdef DARLING
+NONLAZY_CLASS_LOAD
+#endif
 -(id) retain { return self; }
 -(oneway void) release { }
 -(id) autorelease { return self; }
@@ -1996,8 +2013,15 @@ __attribute__((objc_nonlazy_class))
 
 #endif
 
+#ifdef DARLING
+NONLAZY_CLASS
+#else
 __attribute__((objc_nonlazy_class))
+#endif
 @implementation NSObject
+#ifdef DARLING
+NONLAZY_CLASS_LOAD
+#endif
 
 + (void)initialize {
 }
