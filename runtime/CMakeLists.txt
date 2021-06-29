@@ -18,9 +18,9 @@ add_definitions(-D__STDC_NO_ATOMICS__)
 set(CMAKE_C_FLAGS_DEBUG "-ggdb -DOBJC_IS_DEBUG_BUILD=1")
 set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -DOBJC_IS_DEBUG_BUILD=1")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -O2 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch -fvisibility-inlines-hidden -fvisibility=hidden -fstrict-aliasing")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -O2 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch -fvisibility-inlines-hidden -fstrict-aliasing")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -O2 -std=gnu++14 -D__DARWIN_UNIX03 -fPIC -fblocks -fobjc-legacy-dispatch \
-			-fno-rtti -fno-exceptions -Wno-c++11-narrowing -fvisibility-inlines-hidden -fvisibility=hidden -Wno-invalid-offsetof -Wno-deprecated-objc-isa-usage \
+			-fno-rtti -fno-exceptions -Wno-c++11-narrowing -fvisibility-inlines-hidden -Wno-invalid-offsetof -Wno-deprecated-objc-isa-usage \
 			-Wno-cast-of-sel-type -Wstrict-aliasing=2 -Wstrict-overflow=4 -fstrict-aliasing")
 
 add_definitions(-DOBJC_NO_GC -DOBJC_IS_DEBUG_BUILD=1)
@@ -90,6 +90,8 @@ target_link_options(objc PRIVATE
 	# but it's necessary for libobjc to initialize it's own C++ globals before the runtime is initialized
 	# (i'm guessing they renamed the section so that the functions in it wouldn't get called twice: once by libobjc and once by dyld)
 	-Wl,-rename_section,__DATA,__mod_init_func,__DATA,__objc_init_func
+
+	"-Wl,-unexported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/../unexported_symbols"
 )
 set_target_properties(objc PROPERTIES OUTPUT_NAME "objc.A")
 InstallSymlink("libobjc.A.dylib" "${CMAKE_INSTALL_PREFIX}/libexec/darling/usr/lib/libobjc.dylib")
