@@ -22,7 +22,7 @@
  */
 
 #include <TargetConditionals.h>
-#if __x86_64__  &&  TARGET_OS_SIMULATOR  &&  !TARGET_OS_IOSMAC
+#if __x86_64__  &&  TARGET_OS_SIMULATOR  &&  !TARGET_OS_MACCATALYST
 
 /********************************************************************
  ********************************************************************
@@ -93,6 +93,7 @@ _objc_restartableRanges:
 #define a2b sil
 #define a3  rdx
 #define a3d edx
+#define a3b dl
 #define a4  rcx
 #define a4d ecx
 #define a5  r8
@@ -131,6 +132,10 @@ _objc_restartableRanges:
 #define CALL 100
 #define GETIMP 101
 #define LOOKUP 102
+
+#define MSGSEND 200
+#define METHOD_INVOKE 201
+#define METHOD_INVOKE_STRET 202
 
 
 /********************************************************************
@@ -210,6 +215,88 @@ LExit$0:
 
 #define NoFrame 0x02010000  // no frame, no SP adjustment except return address
 #define FrameWithNoSaves 0x01000000  // frame, no non-volatile saves
+
+
+//////////////////////////////////////////////////////////////////////
+//
+// SAVE_REGS
+//
+// Create a stack frame and save all argument registers in preparation
+// for a function call.
+//////////////////////////////////////////////////////////////////////
+
+.macro SAVE_REGS kind
+
+.if \kind != MSGSEND && \kind != METHOD_INVOKE && \kind != METHOD_INVOKE_STRET
+.abort Unknown kind.
+.endif
+	push	%rbp
+	mov	%rsp, %rbp
+
+	sub	$0x80, %rsp
+
+	movdqa	%xmm0, -0x80(%rbp)
+	push	%rax			// might be xmm parameter count
+	movdqa	%xmm1, -0x70(%rbp)
+	push	%a1
+	movdqa	%xmm2, -0x60(%rbp)
+.if \kind == MSGSEND || \kind == METHOD_INVOKE_STRET
+	push	%a2
+.endif
+	movdqa	%xmm3, -0x50(%rbp)
+.if \kind == MSGSEND || \kind == METHOD_INVOKE
+	push	%a3
+.endif
+	movdqa	%xmm4, -0x40(%rbp)
+	push	%a4
+	movdqa	%xmm5, -0x30(%rbp)
+	push	%a5
+	movdqa	%xmm6, -0x20(%rbp)
+	push	%a6
+	movdqa	%xmm7, -0x10(%rbp)
+.if \kind == MSGSEND
+	push	%r10
+.endif
+
+.endmacro
+
+
+//////////////////////////////////////////////////////////////////////
+//
+// RESTORE_REGS
+//
+// Restore all argument registers and pop the stack frame created by
+// SAVE_REGS.
+//////////////////////////////////////////////////////////////////////
+
+.macro RESTORE_REGS kind
+
+.if \kind == MSGSEND
+	pop	%r10
+	orq	$2, %r10 // for the sake of instrumentations, remember it was the slowpath
+.endif
+	movdqa	-0x80(%rbp), %xmm0
+	pop	%a6
+	movdqa	-0x70(%rbp), %xmm1
+	pop	%a5
+	movdqa	-0x60(%rbp), %xmm2
+	pop	%a4
+	movdqa	-0x50(%rbp), %xmm3
+.if \kind == MSGSEND || \kind == METHOD_INVOKE
+	pop	%a3
+.endif
+	movdqa	-0x40(%rbp), %xmm4
+.if \kind == MSGSEND || \kind == METHOD_INVOKE_STRET
+	pop	%a2
+.endif
+	movdqa	-0x30(%rbp), %xmm5
+	pop	%a1
+	movdqa	-0x20(%rbp), %xmm6
+	pop	%rax
+	movdqa	-0x10(%rbp), %xmm7
+	leave
+
+.endmacro
 
 
 /////////////////////////////////////////////////////////////////////
@@ -347,26 +434,7 @@ LExit$0:
 
 .macro MethodTableLookup
 
-	push	%rbp
-	mov	%rsp, %rbp
-	
-	sub	$$0x80+8, %rsp		// +8 for alignment
-
-	movdqa	%xmm0, -0x80(%rbp)
-	push	%rax			// might be xmm parameter count
-	movdqa	%xmm1, -0x70(%rbp)
-	push	%a1
-	movdqa	%xmm2, -0x60(%rbp)
-	push	%a2
-	movdqa	%xmm3, -0x50(%rbp)
-	push	%a3
-	movdqa	%xmm4, -0x40(%rbp)
-	push	%a4
-	movdqa	%xmm5, -0x30(%rbp)
-	push	%a5
-	movdqa	%xmm6, -0x20(%rbp)
-	push	%a6
-	movdqa	%xmm7, -0x10(%rbp)
+	SAVE_REGS MSGSEND
 
 	// lookUpImpOrForward(obj, sel, cls, LOOKUP_INITIALIZE | LOOKUP_RESOLVER)
 .if $0 == NORMAL
@@ -383,29 +451,13 @@ LExit$0:
 	// IMP is now in %rax
 	movq	%rax, %r11
 
-	movdqa	-0x80(%rbp), %xmm0
-	pop	%a6
-	movdqa	-0x70(%rbp), %xmm1
-	pop	%a5
-	movdqa	-0x60(%rbp), %xmm2
-	pop	%a4
-	movdqa	-0x50(%rbp), %xmm3
-	pop	%a3
-	movdqa	-0x40(%rbp), %xmm4
-	pop	%a2
-	movdqa	-0x30(%rbp), %xmm5
-	pop	%a1
-	movdqa	-0x20(%rbp), %xmm6
-	pop	%rax
-	movdqa	-0x10(%rbp), %xmm7
+	RESTORE_REGS MSGSEND
 
 .if $0 == NORMAL
 	test	%r11, %r11		// set ne for stret forwarding
 .else
 	cmp	%r11, %r11		// set eq for nonstret forwarding
 .endif
-	
-	leave
 
 .endmacro
 
@@ -1104,19 +1156,49 @@ LCacheMiss:
 
 	ENTRY _method_invoke
 
+	// See if this is a small method.
+	testb	$1, %a2b
+	jnz	L_method_invoke_small
+
+	// We can directly load the IMP from big methods.
 	movq	method_imp(%a2), %r11
 	movq	method_name(%a2), %a2
 	jmp	*%r11
-	
+
+L_method_invoke_small:
+	// Small methods require a call to handle swizzling.
+	SAVE_REGS METHOD_INVOKE
+	movq	%a2, %a1
+	call	__method_getImplementationAndName
+	movq	%rdx, %a2
+	movq	%rax, %r11
+	RESTORE_REGS METHOD_INVOKE
+	jmp	*%r11
+
 	END_ENTRY _method_invoke
 
 
 	ENTRY _method_invoke_stret
 
+	// See if this is a small method.
+	testb	$1, %a3b
+	jnz	L_method_invoke_stret_small
+
+	// We can directly load the IMP from big methods.
 	movq	method_imp(%a3), %r11
 	movq	method_name(%a3), %a3
 	jmp	*%r11
-	
+
+L_method_invoke_stret_small:
+	// Small methods require a call to handle swizzling.
+	SAVE_REGS METHOD_INVOKE_STRET
+	movq	%a3, %a1
+	call	__method_getImplementationAndName
+	movq	%rdx, %a3
+	movq	%rax, %r11
+	RESTORE_REGS METHOD_INVOKE_STRET
+	jmp	*%r11
+
 	END_ENTRY _method_invoke_stret
 
 

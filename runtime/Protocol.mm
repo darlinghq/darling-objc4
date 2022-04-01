@@ -45,46 +45,20 @@
 // by CF, so __IncompleteProtocol would be left without an R/R implementation 
 // otherwise, which would break ARC.
 
-#ifdef DARLING
-// see libdispatch
-#if __has_attribute(objc_nonlazy_class)
-#define NONLAZY_CLASS      __attribute__((objc_nonlazy_class))
-#define NONLAZY_CLASS_LOAD
-#else
-#define NONLAZY_CLASS
-#define NONLAZY_CLASS_LOAD + (void)load {}
-#endif
-#endif
-
 @interface __IncompleteProtocol : NSObject
 @end
 
 #if __OBJC2__
-#ifdef DARLING
-NONLAZY_CLASS
-#else
 __attribute__((objc_nonlazy_class))
 #endif
-#endif
 @implementation __IncompleteProtocol
-#ifdef DARLING
-NONLAZY_CLASS_LOAD
-#endif
 @end
 
 
 #if __OBJC2__
-#ifdef DARLING
-NONLAZY_CLASS
-#else
 __attribute__((objc_nonlazy_class))
 #endif
-#endif
 @implementation Protocol
-
-#ifdef DARLING
-NONLAZY_CLASS_LOAD
-#endif
 
 - (BOOL) conformsTo: (Protocol *)aProtocolObj
 {
@@ -126,7 +100,7 @@ NONLAZY_CLASS_LOAD
     // check isKindOf:
     Class cls;
     Class protoClass = objc_getClass("Protocol");
-    for (cls = object_getClass(other); cls; cls = cls->superclass) {
+    for (cls = object_getClass(other); cls; cls = cls->getSuperclass()) {
         if (cls == protoClass) break;
     }
     if (!cls) return NO;

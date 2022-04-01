@@ -6,11 +6,28 @@
 use strict;
 use File::Basename;
 
+use Config;
+my $supportsParallelBuilds = $Config{useithreads};
+
+if ($supportsParallelBuilds) {
+    require threads;
+    import threads;
+    require Thread::Queue;
+    import Thread::Queue;
+}
+
 # We use encode_json() to write BATS plist files.
 # JSON::PP does not exist on iOS devices, but we need not write plists there.
 # So we simply load JSON:PP if it exists.
 if (eval { require JSON::PP; 1; }) {
     JSON::PP->import();
+}
+
+# iOS also doesn't have Text::Glob. We don't need it there.
+my $has_match_glob = 0;
+if (eval { require Text::Glob; 1; }) {
+    Text::Glob->import();
+    $has_match_glob = 1;
 }
 
 
@@ -31,6 +48,8 @@ options:
     ARCH=<arch>
     OS=<sdk name>[sdk version][-<deployment target>[-<run target>]]
     ROOT=/path/to/project.roots/
+    HOST=<test device hostname>
+    DEVICE=<simulator test device name>
 
     CC=<compiler name>
 
@@ -42,6 +61,10 @@ options:
     RUN=0|1        (run the tests?)
     VERBOSE=0|1|2  (0=quieter  1=print commands executed  2=full test output)
     BATS=0|1       (build for and/or run in BATS?)
+    BUILD_SHARED_CACHE=0|1  (build a dyld shared cache with the root and test against that)
+    DYLD=2|3       (test in dyld 2 or dyld 3 mode)
+    PARALLELBUILDS=N  (number of parallel builds to run simultaneously)
+    SHAREDCACHEDIR=/path/to/custom/shared/cache/directory
 
 examples:
 
@@ -106,6 +129,11 @@ my $BATS;
 
 my $HOST;
 my $PORT;
+my $DEVICE;
+
+my $PARALLELBUILDS;
+
+my $SHAREDCACHEDIR;
 
 my @TESTLIBNAMES = ("libobjc.A.dylib", "libobjc-trampolines.dylib");
 my $TESTLIBDIR = "/usr/lib";
@@ -221,14 +249,18 @@ my %languages_for_extension = (
 # Run some newline-separated commands like `make` would, stopping if any fail
 # run("cmd1 \n cmd2 \n cmd3")
 sub make {
+    my ($cmdstr, $cwd) = @_;
     my $output = "";
-    my @cmds = split("\n", $_[0]);
+    my @cmds = split("\n", $cmdstr);
     die if scalar(@cmds) == 0;
     $? = 0;
     foreach my $cmd (@cmds) {
         chomp $cmd;
         next if $cmd =~ /^\s*$/;
         $cmd .= " 2>&1";
+        if (defined $cwd) {
+            $cmd = "cd $cwd; $cmd";
+        }
         print "$cmd\n" if $VERBOSE;
         $output .= `$cmd`;
         last if $?;
@@ -245,7 +277,7 @@ sub chdir_verbose {
 
 sub rm_rf_verbose {
     my $dir = shift || die;
-    print "mkdir -p $dir\n" if $VERBOSE;
+    print "rm -rf $dir\n" if $VERBOSE;
     `rm -rf '$dir'`;
     die "couldn't rm -rf $dir" if $?;
 }
@@ -732,6 +764,7 @@ sub gather_simple {
     # TEST_BUILD build instructions
     # TEST_BUILD_OUTPUT expected build stdout/stderr
     # TEST_RUN_OUTPUT expected run stdout/stderr
+    # TEST_ENTITLEMENTS path to entitlements file
     open(my $in, "< $file") || die;
     my $contents = join "", <$in>;
     
@@ -741,11 +774,15 @@ sub gather_simple {
     my ($conditionstring) = ($contents =~ /\bTEST_CONFIG\b(.*)$/m);
     my ($envstring) = ($contents =~ /\bTEST_ENV\b(.*)$/m);
     my ($cflags) = ($contents =~ /\bTEST_CFLAGS\b(.*)$/m);
+    my ($entitlements) = ($contents =~ /\bTEST_ENTITLEMENTS\b(.*)$/m);
+    $entitlements =~ s/^\s+|\s+$//g;
     my ($buildcmd) = extract_multiline("TEST_BUILD", $contents, $name);
     my ($builderror) = extract_multiple_multiline("TEST_BUILD_OUTPUT", $contents, $name);
     my ($runerror) = extract_multiple_multiline("TEST_RUN_OUTPUT", $contents, $name);
 
-    return 0 if !$test_h && !$disabled && !$crashes && !defined($conditionstring) && !defined($envstring) && !defined($cflags) && !defined($buildcmd) && !defined($builderror) && !defined($runerror);
+    return 0 if !$test_h && !$disabled && !$crashes && !defined($conditionstring)
+                && !defined($envstring) && !defined($cflags) && !defined($buildcmd)
+                && !defined($builderror) && !defined($runerror) && !defined($entitlements);
 
     if ($disabled) {
         colorprint $yellow, "SKIP: $name    (disabled by $disabled)";
@@ -811,6 +848,7 @@ sub gather_simple {
         TEST_RUN => $run,
         DSTDIR => "$C{DSTDIR}/$name.build",
         OBJDIR => "$C{OBJDIR}/$name.build",
+        ENTITLEMENTS => $entitlements,
     };
 
     return 1;
@@ -856,22 +894,34 @@ sub build_simple {
     my $name = shift;
     my %T = %{$C{"TEST_$name"}};
 
-    mkdir_verbose $T{DSTDIR};
-    chdir_verbose $T{DSTDIR};
+    my $dstdir = $T{DSTDIR};
+    if (-e "$dstdir/build-succeeded") {
+        # We delete the whole test directory before building (if it existed),
+        # so if this file exists now, that means another configuration already
+        # did an equivalent build.
+        print "note:	$name is already built at $dstdir, skipping the build\n" if $VERBOSE;
+        return 1;
+    }
+
+    mkdir_verbose $dstdir;
     # we don't mkdir $T{OBJDIR} because most tests don't use it
 
     my $ext = $ALL_TESTS{$name};
     my $file = "$DIR/$name.$ext";
 
     if ($T{TEST_CRASHES}) {
-        `echo '$crashcatch' > crashcatch.c`;
-        make("$C{COMPILE_C} -dynamiclib -o libcrashcatch.dylib -x c crashcatch.c");
-        die "$?" if $?;
+        `echo '$crashcatch' > $dstdir/crashcatch.c`;
+        my $output = make("$C{COMPILE_C} -dynamiclib -o libcrashcatch.dylib -x c crashcatch.c", $dstdir);
+        if ($?) {
+            colorprint  $red, "FAIL: building crashcatch.c";
+            colorprefix $red, $output;
+            return 0;
+        }
     }
 
     my $cmd = $T{TEST_BUILD} ? eval "return \"$T{TEST_BUILD}\"" : "$C{COMPILE}   $T{TEST_CFLAGS} $file -o $name.exe";
 
-    my $output = make($cmd);
+    my $output = make($cmd, $dstdir);
 
     # ignore out-of-date text-based stubs (caused by ditto into SDK)
     $output =~ s/ld: warning: text-based stub file.*\n//g;
@@ -884,6 +934,7 @@ sub build_simple {
     $output =~ s/^warning:     callee: [^\n]+\n//g;
     # rdar://38710948
     $output =~ s/ld: warning: ignoring file [^\n]*libclang_rt\.bridgeos\.a[^\n]*\n//g;
+    $output =~ s/ld: warning: building for iOS Simulator, but[^\n]*\n//g;
     # ignore compiler logging of CCC_OVERRIDE_OPTIONS effects
     if (defined $ENV{CCC_OVERRIDE_OPTIONS}) {
         $output =~ s/### (CCC_OVERRIDE_OPTIONS:|Adding argument|Deleting argument|Replacing) [^\n]*\n//g;
@@ -926,21 +977,34 @@ sub build_simple {
     }
 
     if ($ok) {
-        foreach my $file (glob("*.exe *.dylib *.bundle")) {
+        foreach my $file (glob("$dstdir/*.exe $dstdir/*.dylib $dstdir/*.bundle")) {
             if (!$BATS) {
                 # not for BATS to save space and build time
                 # fixme use SYMROOT?
-                make("xcrun dsymutil $file");
+                make("xcrun dsymutil $file", $dstdir);
             }
             if ($C{OS} eq "macosx"  ||  $C{OS} =~ /simulator/) {
                 # setting any entitlements disables dyld environment variables
             } else {
                 # get-task-allow entitlement is required
                 # to enable dyld environment variables
-                make("xcrun codesign -s - --entitlements $DIR/get_task_allow_entitlement.plist $file");
-                die "$?" if $?;
+                if (!$T{ENTITLEMENTS}) {
+                    $T{ENTITLEMENTS} = "get_task_allow_entitlement.plist";
+                }
+                my $output = make("xcrun codesign -s - --entitlements $DIR/$T{ENTITLEMENTS} $file", $dstdir);
+                if ($?) {
+                    colorprint  $red, "FAIL: codesign $file";
+                    colorprefix $red, $output;
+                    return 0;
+                }
             }
         }
+    }
+
+    # Mark the build as successful so other configs with the same build
+    # requirements can skip buildiing.
+    if ($ok) {
+        make("touch build-succeeded", $dstdir);
     }
 
     return $ok;
@@ -966,6 +1030,20 @@ sub run_simple {
         $env .= " OBJC_DEBUG_DONT_CRASH=YES";
     }
 
+    if ($C{DYLD} eq "2") {
+        $env .= " DYLD_USE_CLOSURES=0";
+    }
+    elsif ($C{DYLD} eq "3") {
+        $env .= " DYLD_USE_CLOSURES=1";
+    }
+    else {
+        die "unknown DYLD setting $C{DYLD}";
+    }
+
+    if ($SHAREDCACHEDIR) {
+        $env .= " DYLD_SHARED_REGION=private DYLD_SHARED_CACHE_DIR=$SHAREDCACHEDIR";
+    }
+
     my $output;
 
     if ($C{ARCH} =~ /^arm/ && `uname -p` !~ /^arm/) {
@@ -981,23 +1059,12 @@ sub run_simple {
             $env .= " DYLD_INSERT_LIBRARIES=$remotedir/libcrashcatch.dylib";
         }
 
-        my $cmd = "ssh -p $PORT $HOST 'cd $remotedir && env $env ./$name.exe'";
+        my $cmd = "ssh $PORT $HOST 'cd $remotedir && env $env ./$name.exe'";
         $output = make("$cmd");
     }
     elsif ($C{OS} =~ /simulator/) {
         # run locally in a simulator
-        # fixme selection of simulated OS version
-        my $simdevice;
-        if ($C{OS} =~ /iphonesimulator/) {
-            $simdevice = 'iPhone X';
-        } elsif ($C{OS} =~ /watchsimulator/) {
-            $simdevice = 'Apple Watch Series 4 - 40mm';
-        } elsif ($C{OS} =~ /tvsimulator/) {
-            $simdevice = 'Apple TV 1080p';
-        } else {
-            die "unknown simulator $C{OS}\n";
-        }
-        my $sim = "xcrun -sdk iphonesimulator simctl spawn '$simdevice'";
+        my $sim = "xcrun -sdk iphonesimulator simctl spawn '$DEVICE'";
         # Add test dir and libobjc's dir to DYLD_LIBRARY_PATH.
         # Insert libcrashcatch.dylib if necessary.
         $env .= " DYLD_LIBRARY_PATH=$testdir";
@@ -1060,6 +1127,26 @@ sub dirContainsAllTestLibs {
     return 1;
 }
 
+sub findIncludeDir {
+    my ($root, $includePath) = @_;
+
+    foreach my $candidate ("$root/../SDKContentRoot/$includePath", "$root/$includePath") {
+        my $found = -e $candidate;
+        my $foundstr = ($found ? "found" : "didn't find");
+        print "note:	$foundstr $includePath at $candidate\n" if $VERBOSE;
+        return $candidate if $found;
+    }
+
+    die "Unable to find $includePath in $root.\n";
+}
+
+sub buildSharedCache {
+    my $Cref = shift;
+    my %C = %$Cref;
+    
+    make("update_dyld_shared_cache -verbose -cache_dir $BUILDDIR -overlay $C{TESTLIBDIR}/../..");
+}
+
 sub make_one_config {
     my $configref = shift;
     my $root = shift;
@@ -1091,11 +1178,11 @@ sub make_one_config {
 
     # set the config name now, after massaging the language and OS versions, 
     # but before adding other settings
-    my $configname = config_name(%C);
-    die if ($configname =~ /'/);
-    die if ($configname =~ / /);
-    ($C{NAME} = $configname) =~ s/~/ /g;
-    (my $configdir = $configname) =~ s#/##g;
+    my $configdirname = config_dir_name(%C);
+    die if ($configdirname =~ /'/);
+    die if ($configdirname =~ / /);
+    ($C{NAME} = $configdirname) =~ s/~/ /g;
+    (my $configdir = $configdirname) =~ s#/##g;
     $C{DSTDIR} = "$DSTROOT$BUILDDIR/$configdir";
     $C{OBJDIR} = "$OBJROOT$BUILDDIR/$configdir";
 
@@ -1315,9 +1402,8 @@ sub make_one_config {
 
         my $library_path = $C{TESTLIBDIR};
         $cflags .= " -L$library_path";
-        # fixme Root vs SDKContentRoot
-        $C{TESTINCLUDEDIR} = "$root/../SDKContentRoot/usr/include";
-        $C{TESTLOCALINCLUDEDIR} = "$root/../SDKContentRoot/usr/local/include";
+        $C{TESTINCLUDEDIR} = findIncludeDir($root, "usr/include");
+        $C{TESTLOCALINCLUDEDIR} = findIncludeDir($root, "usr/local/include");
         $cflags .= " -isystem '$C{TESTINCLUDEDIR}'";
         $cflags .= " -isystem '$C{TESTLOCALINCLUDEDIR}'";
     }
@@ -1358,9 +1444,9 @@ sub make_one_config {
     $C{XCRUN} = "env LANG=C /usr/bin/xcrun -toolchain '$C{TOOLCHAIN}'";
 
     $C{COMPILE_C}   = "$C{XCRUN} '$C{CC}'  $cflags -x c -std=gnu99";
-    $C{COMPILE_CXX} = "$C{XCRUN} '$C{CXX}' $cflags -x c++";
+    $C{COMPILE_CXX} = "$C{XCRUN} '$C{CXX}' $cflags -x c++ -std=gnu++17";
     $C{COMPILE_M}   = "$C{XCRUN} '$C{CC}'  $cflags $objcflags -x objective-c -std=gnu99";
-    $C{COMPILE_MM}  = "$C{XCRUN} '$C{CXX}' $cflags $objcflags -x objective-c++";
+    $C{COMPILE_MM}  = "$C{XCRUN} '$C{CXX}' $cflags $objcflags -x objective-c++ -std=gnu++17";
     $C{COMPILE_SWIFT} = "$C{XCRUN} '$C{SWIFT}' $swiftflags";
     
     $C{COMPILE} = $C{COMPILE_C}      if $C{LANGUAGE} eq "c";
@@ -1437,10 +1523,13 @@ sub make_configs {
     return @newresults;
 }
 
-sub config_name {
+sub config_dir_name {
     my %config = @_;
     my $name = "";
     for my $key (sort keys %config) {
+        # Exclude settings that only influence the run, not the build.
+        next if $key eq "DYLD" || $key eq "GUARDMALLOC";
+
         $name .= '~'  if $name ne "";
         $name .= "$key=$config{$key}";
     }
@@ -1450,7 +1539,7 @@ sub config_name {
 sub rsync_ios {
     my ($src, $timeout) = @_;
     for (my $i = 0; $i < 10; $i++) {
-        make("$DIR/timeout.pl $timeout rsync -e 'ssh -p $PORT' -av $src $HOST:/$REMOTEBASE/");
+        make("$DIR/timeout.pl $timeout rsync -e 'ssh $PORT' -av $src $HOST:/$REMOTEBASE/");
         return if $? == 0;
         colorprint $yellow, "WARN: RETRY\n"  if $VERBOSE;
     }
@@ -1475,8 +1564,15 @@ sub build_and_run_one_config {
         if ($ALL_TESTS{$test}) {
             gather_simple(\%C, $test) || next;  # not pass, not fail
             push @gathertests, $test;
-        } else {
-            die "No test named '$test'\n";
+        } elsif ($has_match_glob) {
+            my @matched = Text::Glob::match_glob($test, (keys %ALL_TESTS));
+            if (not @matched) {
+                die "No test matched '$test'\n";
+            }
+            foreach my $match (@matched) {
+                gather_simple(\%C, $match) || next;  # not pass, not fail
+                push @gathertests, $match;
+            }
         }
     }
 
@@ -1484,7 +1580,56 @@ sub build_and_run_one_config {
     if (!$BUILD) {
         @builttests = @gathertests;
         $testcount = scalar(@gathertests);
+    } elsif ($PARALLELBUILDS > 1 && $supportsParallelBuilds) {
+        my $workQueue = Thread::Queue->new();
+        my $resultsQueue = Thread::Queue->new();
+        my @threads = map {
+            threads->create(sub {
+                while (defined(my $test = $workQueue->dequeue())) {
+                    local *STDOUT;
+                    local *STDERR;
+                    my $output;
+                    open STDOUT, '>>', \$output;
+                    open STDERR, '>>', \$output;
+            
+                    my $success = build_simple(\%C, $test);
+                    $resultsQueue->enqueue({ test => $test, success => $success, output => $output });
+                }
+            });
+        } (1 .. $PARALLELBUILDS);
+        
+        foreach my $test (@gathertests) {
+            if ($VERBOSE) {
+                print "\nBUILD $test\n";
+            }
+            if ($ALL_TESTS{$test}) {
+                $testcount++;
+                $workQueue->enqueue($test);
+            } else {
+                die "No test named '$test'\n";
+            }
+        }
+        $workQueue->end();
+        foreach (@gathertests) {
+            my $result = $resultsQueue->dequeue();
+            my $test = $result->{test};
+            my $success = $result->{success};
+            my $output = $result->{output};
+            
+            print $output;
+            if ($success) {
+                push @builttests, $test;
+            } else {
+                $failcount++;
+            }
+        }
+        foreach my $thread (@threads) {
+            $thread->join();
+        }
     } else {
+        if ($PARALLELBUILDS > 1) {
+            print "WARNING: requested parallel builds, but this perl interpreter does not support threads. Falling back to sequential builds.\n";
+        }
         foreach my $test (@gathertests) {
             if ($VERBOSE) {
                 print "\nBUILD $test\n";
@@ -1507,7 +1652,7 @@ sub build_and_run_one_config {
         # nothing to do
     }
     else {
-        if ($C{ARCH} =~ /^arm/ && `uname -p` !~ /^arm/) {
+        if ($HOST && $C{ARCH} =~ /^arm/ && `uname -p` !~ /^arm/) {
             # upload timeout - longer for slow watch devices
             my $timeout = ($C{OS} =~ /watch/) ? 120 : 20;
             
@@ -1634,10 +1779,22 @@ $args{OSVERSION} = getargs("OS", "macosx-default-default");
 $args{MEM} = getargs("MEM", "mrc,arc");
 $args{LANGUAGE} = [ map { lc($_) } @{getargs("LANGUAGE", "c,objective-c,c++,objective-c++")} ];
 
+$args{BUILD_SHARED_CACHE} = getargs("BUILD_SHARED_CACHE", 0);
+
+$args{DYLD} = getargs("DYLD", "2,3");
+
 $args{CC} = getargs("CC", "clang");
 
-$HOST = getarg("HOST", "iphone");
-$PORT = getarg("PORT", "10022");
+$HOST = getarg("HOST", 0);
+$PORT = getarg("PORT", "");
+if ($PORT) {
+  $PORT = "-p $PORT";
+}
+$DEVICE = getarg("DEVICE", "booted");
+
+$PARALLELBUILDS = getarg("PARALLELBUILDS", `sysctl -n hw.ncpu`);
+
+$SHAREDCACHEDIR = getarg("SHAREDCACHEDIR", "");
 
 {
     my $guardmalloc = getargs("GUARDMALLOC", 0);    
@@ -1709,6 +1866,8 @@ for my $configref (@configs) {
         $failconfigs++ if ($f);
     }
 }
+
+make("find $DSTROOT$BUILDDIR -name build-succeeded -delete", "/");
 
 print "note: -----\n";
 my $color = ($failconfigs ? $red : "");
