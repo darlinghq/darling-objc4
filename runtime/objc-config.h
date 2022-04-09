@@ -181,7 +181,15 @@
 //
 // If the runtime lock ever becomes a rwlock again,
 // the cache lock would need to be used again
+#ifndef DARLING
 #define CONFIG_USE_CACHE_LOCK 0
+#else
+#if __OBJC2__
+#define CONFIG_USE_CACHE_LOCK 0
+#else
+#define CONFIG_USE_CACHE_LOCK 1
+#endif
+#endif
 
 // Determine how the method cache stores IMPs.
 #define CACHE_IMP_ENCODING_NONE 1 // Method cache contains raw IMP.
