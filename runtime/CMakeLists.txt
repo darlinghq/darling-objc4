@@ -12,7 +12,7 @@ if(COMMAND cmake_policy)
 	cmake_policy(SET CMP0005 NEW)
 endif(COMMAND cmake_policy)
 
-add_definitions(-D__STDC_NO_ATOMICS__)
+add_definitions(-D__STDC_NO_ATOMICS__ -U__POSIX_LIB__)
 
 # Override DEBUG CFLAGS because -O0 has been triggering strange bugs
 set(CMAKE_C_FLAGS_DEBUG "-ggdb -DOBJC_IS_DEBUG_BUILD=1")
