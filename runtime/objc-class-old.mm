@@ -336,7 +336,11 @@ static void _class_resolveClassMethod(id inst, SEL sel, Class cls)
     ASSERT(cls->isMetaClass());
     SEL resolve_sel = @selector(resolveClassMethod:);
 
+    #if defined(DARLING) && defined(__i386__)
+    if (!lookUpImpOrNil(inst, resolve_sel, cls)) {
+    #else
     if (!lookUpImpOrNilTryCache(inst, resolve_sel, cls)) {
+    #endif
         // Resolver not implemented.
         return;
     }
@@ -346,7 +350,11 @@ static void _class_resolveClassMethod(id inst, SEL sel, Class cls)
 
     // Cache the result (good or bad) so the resolver doesn't fire next time.
     // +resolveClassMethod adds to self->ISA() a.k.a. cls
+    #if defined(DARLING) && defined(__i386__)
+    IMP imp = lookUpImpOrNil(inst, sel, cls);
+    #else
     IMP imp = lookUpImpOrNilTryCache(inst, sel, cls);
+    #endif
     if (resolved  &&  PrintResolving) {
         if (imp) {
             _objc_inform("RESOLVE: method %c[%s %s] "
@@ -376,7 +384,11 @@ static void _class_resolveInstanceMethod(id inst, SEL sel, Class cls)
 {
     SEL resolve_sel = @selector(resolveInstanceMethod:);
 
+    #if defined(DARLING) && defined(__i386__)
+    if (! lookUpImpOrNil(cls, resolve_sel, cls->ISA())) {
+    #else
     if (! lookUpImpOrNilTryCache(cls, resolve_sel, cls->ISA())) {
+    #endif
         // Resolver not implemented.
         return;
     }
@@ -386,7 +398,11 @@ static void _class_resolveInstanceMethod(id inst, SEL sel, Class cls)
 
     // Cache the result (good or bad) so the resolver doesn't fire next time.
     // +resolveInstanceMethod adds to self a.k.a. cls
+    #if defined(DARLING) && defined(__i386__)
+    IMP imp = lookUpImpOrNil(inst, sel, cls);
+    #else
     IMP imp = lookUpImpOrNilTryCache(inst, sel, cls);
+    #endif
 
     if (resolved  &&  PrintResolving) {
         if (imp) {
@@ -424,7 +440,11 @@ _class_resolveMethod(id inst, SEL sel, Class cls)
         // try [nonMetaClass resolveClassMethod:sel]
         // and [cls resolveInstanceMethod:sel]
         _class_resolveClassMethod(inst, sel, cls);
+        #if defined(DARLING) && defined(__i386__)
+        if (!lookUpImpOrNil(inst, sel, cls)) {
+        #else
         if (!lookUpImpOrNilTryCache(inst, sel, cls)) {
+        #endif
             _class_resolveInstanceMethod(inst, sel, cls);
         }
     }
@@ -475,7 +495,11 @@ IMP lookUpImpOrForward(id inst, SEL sel, Class cls, int behavior)
     methodListLock.assertUnlocked();
 
     // Optimistic cache lookup
+#ifdef DARLING
+    if ((behavior & LOOKUP_NOCACHE) == 0) {
+#else
     if (behavior & LOOKUP_CACHE) {
+#endif
         methodPC = _cache_getImp(cls, sel);
         if (methodPC) goto out_nolock;
     }
@@ -2442,7 +2466,11 @@ void *objc_destructInstance(id obj)
         }
 
         if (isa->instancesHaveAssociatedObjects()) {
+#ifdef DARLING
+            _object_remove_assocations(obj,false);
+#else
             _object_remove_assocations(obj);
+#endif
         }
 
         objc_clear_deallocating(obj);

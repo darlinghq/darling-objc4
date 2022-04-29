@@ -163,6 +163,14 @@
 #include <os/linker_set.h>
 #endif
 
+#ifdef DARLING
+#if __OBJC2__
+#define DARLING_GET_SUPER_CLASS getSuperclass()
+#else
+#define DARLING_GET_SUPER_CLASS superclass
+#endif
+#endif
+
 /***********************************************************************
 * Information about multi-thread support:
 *
@@ -200,7 +208,11 @@ Class object_setClass(id obj, Class cls)
     if (!cls->isFuture()  &&  !cls->isInitialized()) {
         // use lookUpImpOrNilTryCache to indirectly provoke +initialize
         // to avoid duplicating the code to actually send +initialize
+        #if defined(DARLING) && defined(__i386__)
+        lookUpImpOrNil(nil, @selector(initialize), cls, LOOKUP_INITIALIZE);
+        #else
         lookUpImpOrNilTryCache(nil, @selector(initialize), cls, LOOKUP_INITIALIZE);
+        #endif
     }
 
     return obj->changeIsa(cls);
@@ -284,7 +296,7 @@ _class_lookUpIvar(Class cls, Ivar ivar, ptrdiff_t& ivarOffset,
     // Preflight the hasAutomaticIvars check
     // because _class_getClassForIvar() may need to take locks.
     bool hasAutomaticIvars = NO;
-    for (Class c = cls; c; c = c->getSuperclass()) {
+    for (Class c = cls; c; c = c->DARLING_GET_SUPER_CLASS) {
         if (c->hasAutomaticIvars()) {
             hasAutomaticIvars = YES;
             break;
@@ -443,7 +455,7 @@ static void object_cxxDestructFromClass(id obj, Class cls)
 
     // Call cls's dtor first, then superclasses's dtors.
 
-    for ( ; cls; cls = cls->getSuperclass()) {
+    for ( ; cls; cls = cls->DARLING_GET_SUPER_CLASS) {
         if (!cls->hasCxxDtor()) return; 
         dtor = (void(*)(id))
             lookupMethodInClassAndLoadCache(cls, SEL_cxx_destruct);
@@ -493,7 +505,7 @@ object_cxxConstructFromClass(id obj, Class cls, int flags)
     id (*ctor)(id);
     Class supercls;
 
-    supercls = cls->getSuperclass();
+    supercls = cls->DARLING_GET_SUPER_CLASS;
 
     // Call superclasses' ctors first, if any.
     if (supercls  &&  supercls->hasCxxCtor()) {
@@ -512,7 +524,7 @@ object_cxxConstructFromClass(id obj, Class cls, int flags)
     }
     if (fastpath((*ctor)(obj))) return obj;  // ctor called and succeeded - ok
 
-    supercls = cls->getSuperclass(); // this reload avoids a spill on the stack
+    supercls = cls->DARLING_GET_SUPER_CLASS; // this reload avoids a spill on the stack
 
     // This class's ctor was called and failed.
     // Call superclasses's dtors to clean up.
@@ -532,7 +544,7 @@ object_cxxConstructFromClass(id obj, Class cls, int flags)
 **********************************************************************/
 void fixupCopiedIvars(id newObject, id oldObject)
 {
-    for (Class cls = oldObject->ISA(); cls; cls = cls->getSuperclass()) {
+    for (Class cls = oldObject->ISA(); cls; cls = cls->DARLING_GET_SUPER_CLASS) {
         if (cls->hasAutomaticIvars()) {
             // Use alignedInstanceStart() because unaligned bytes at the start
             // of this class's ivars are not represented in the layout bitmap.
@@ -643,7 +655,11 @@ class_respondsToSelector_inst(id inst, SEL sel, Class cls)
 {
     // Avoids +initialize because it historically did so.
     // We're not returning a callable IMP anyway.
+    #if defined(DARLING) && defined(__i386__)
+    return sel && cls && lookUpImpOrNil(inst, sel, cls, LOOKUP_RESOLVER);
+    #else
     return sel && cls && lookUpImpOrNilTryCache(inst, sel, cls, LOOKUP_RESOLVER);
+    #endif
 }
 
 
@@ -673,7 +689,11 @@ IMP class_getMethodImplementation(Class cls, SEL sel)
 
     lockdebug_assert_no_locks_locked_except({ &loadMethodLock });
 
+    #if defined(DARLING) && defined(__i386__)
+    imp = lookUpImpOrNil(nil, sel, cls, LOOKUP_INITIALIZE | LOOKUP_RESOLVER);
+    #else
     imp = lookUpImpOrNilTryCache(nil, sel, cls, LOOKUP_INITIALIZE | LOOKUP_RESOLVER);
+    #endif
 
     // Translate forwarding function to C-callable external version
     if (!imp) {
@@ -780,7 +800,7 @@ Class _calloc_class(size_t size)
 Class class_getSuperclass(Class cls)
 {
     if (!cls) return nil;
-    return cls->getSuperclass();
+    return cls->DARLING_GET_SUPER_CLASS;
 }
 
 BOOL class_isMetaClass(Class cls)

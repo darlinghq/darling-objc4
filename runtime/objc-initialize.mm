@@ -97,6 +97,15 @@
 #include "objc-initialize.h"
 #include "DenseMapExtras.h"
 
+#ifdef DARLING
+#if __OBJC2__
+#define DARLING_GET_SUPER_CLASS getSuperclass()
+#else
+#define DARLING_GET_SUPER_CLASS superclass
+#endif
+#endif
+
+
 /* classInitLock protects CLS_INITIALIZED and CLS_INITIALIZING, and 
  * is signalled when any class is done initializing. 
  * Threads that are waiting for a class to finish initializing wait on this. */
@@ -396,10 +405,15 @@ static bool classHasTrivialInitialize(Class cls)
 {
     if (cls->isRootClass() || cls->isRootMetaclass()) return true;
 
-    Class rootCls = cls->ISA()->ISA()->getSuperclass();
+    Class rootCls = cls->ISA()->ISA()->DARLING_GET_SUPER_CLASS;
     
+    #if defined(DARLING) && defined(__i386__)
+    IMP rootImp = lookUpImpOrNil(rootCls, @selector(initialize), rootCls->ISA());
+    IMP imp = lookUpImpOrNil(cls, @selector(initialize), cls->ISA());
+    #else
     IMP rootImp = lookUpImpOrNilTryCache(rootCls, @selector(initialize), rootCls->ISA());
     IMP imp = lookUpImpOrNilTryCache(cls, @selector(initialize), cls->ISA());
+    #endif
     return (imp == nil  ||  imp == (IMP)&objc_noop_imp  ||  imp == rootImp);
 }
 
@@ -500,7 +514,7 @@ void initializeNonMetaClass(Class cls)
 
     // Make sure super is done initializing BEFORE beginning to initialize cls.
     // See note about deadlock above.
-    supercls = cls->getSuperclass();
+    supercls = cls->DARLING_GET_SUPER_CLASS;
     if (supercls  &&  !supercls->isInitialized()) {
         initializeNonMetaClass(supercls);
     }

@@ -609,6 +609,14 @@ extern IMP lookUpImpOrForward(id obj, SEL, Class cls, int behavior);
 extern IMP lookUpImpOrForwardTryCache(id obj, SEL, Class cls, int behavior = 0);
 extern IMP lookUpImpOrNilTryCache(id obj, SEL, Class cls, int behavior = 0);
 
+#ifdef DARLING
+static inline IMP
+lookUpImpOrNil(id obj, SEL sel, Class cls, int behavior = 0)
+{
+    return lookUpImpOrForward(obj, sel, cls, behavior | LOOKUP_NIL);
+}
+#endif
+
 extern IMP lookupMethodInClassAndLoadCache(Class cls, SEL sel);
 
 struct IMPAndSEL {

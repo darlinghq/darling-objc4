@@ -46,6 +46,14 @@ extern "C" {
 #include <os/variant_private.h>
 }
 
+#ifdef DARLING
+#if __OBJC2__
+#define DARLING_GET_SUPER_CLASS getSuperclass()
+#else
+#define DARLING_GET_SUPER_CLASS superclass
+#endif
+#endif
+
 @interface NSInvocation
 - (SEL)selector;
 @end
@@ -572,7 +580,11 @@ objc_loadWeakRetained(id *location)
         // callout with the lock held.
         if (cls->isInitialized() || _thisThreadIsInitializingClass(cls)) {
             BOOL (*tryRetain)(id, SEL) = (BOOL(*)(id, SEL))
+            #if defined(DARLING) && defined(__i386__)
+                class_getMethodImplementation(cls, @selector(retainWeakReference));
+            #else
                 lookUpImpOrForwardTryCache(obj, @selector(retainWeakReference), cls);
+            #endif
             if ((IMP)tryRetain == _objc_msgForward) {
                 result = nil;
             }
@@ -2013,7 +2025,7 @@ objc_opt_isKindOfClass(id obj, Class otherClass)
     if (slowpath(!obj)) return NO;
     Class cls = obj->getIsa();
     if (fastpath(!cls->hasCustomCore())) {
-        for (Class tcls = cls; tcls; tcls = tcls->getSuperclass()) {
+        for (Class tcls = cls; tcls; tcls = tcls->DARLING_GET_SUPER_CLASS) {
             if (tcls == otherClass) return YES;
         }
         return NO;
@@ -2266,11 +2278,11 @@ NONLAZY_CLASS_LOAD
 }
 
 + (Class)superclass {
-    return self->getSuperclass();
+    return self->DARLING_GET_SUPER_CLASS;
 }
 
 - (Class)superclass {
-    return [self class]->getSuperclass();
+    return [self class]->DARLING_GET_SUPER_CLASS;
 }
 
 + (BOOL)isMemberOfClass:(Class)cls {
@@ -2282,28 +2294,28 @@ NONLAZY_CLASS_LOAD
 }
 
 + (BOOL)isKindOfClass:(Class)cls {
-    for (Class tcls = self->ISA(); tcls; tcls = tcls->getSuperclass()) {
+    for (Class tcls = self->ISA(); tcls; tcls = tcls->DARLING_GET_SUPER_CLASS) {
         if (tcls == cls) return YES;
     }
     return NO;
 }
 
 - (BOOL)isKindOfClass:(Class)cls {
-    for (Class tcls = [self class]; tcls; tcls = tcls->getSuperclass()) {
+    for (Class tcls = [self class]; tcls; tcls = tcls->DARLING_GET_SUPER_CLASS) {
         if (tcls == cls) return YES;
     }
     return NO;
 }
 
 + (BOOL)isSubclassOfClass:(Class)cls {
-    for (Class tcls = self; tcls; tcls = tcls->getSuperclass()) {
+    for (Class tcls = self; tcls; tcls = tcls->DARLING_GET_SUPER_CLASS) {
         if (tcls == cls) return YES;
     }
     return NO;
 }
 
 + (BOOL)isAncestorOfObject:(NSObject *)obj {
-    for (Class tcls = [obj class]; tcls; tcls = tcls->getSuperclass()) {
+    for (Class tcls = [obj class]; tcls; tcls = tcls->DARLING_GET_SUPER_CLASS) {
         if (tcls == self) return YES;
     }
     return NO;
@@ -2323,7 +2335,7 @@ NONLAZY_CLASS_LOAD
 
 + (BOOL)conformsToProtocol:(Protocol *)protocol {
     if (!protocol) return NO;
-    for (Class tcls = self; tcls; tcls = tcls->getSuperclass()) {
+    for (Class tcls = self; tcls; tcls = tcls->DARLING_GET_SUPER_CLASS) {
         if (class_conformsToProtocol(tcls, protocol)) return YES;
     }
     return NO;
@@ -2331,7 +2343,7 @@ NONLAZY_CLASS_LOAD
 
 - (BOOL)conformsToProtocol:(Protocol *)protocol {
     if (!protocol) return NO;
-    for (Class tcls = [self class]; tcls; tcls = tcls->getSuperclass()) {
+    for (Class tcls = [self class]; tcls; tcls = tcls->DARLING_GET_SUPER_CLASS) {
         if (class_conformsToProtocol(tcls, protocol)) return YES;
     }
     return NO;

@@ -407,9 +407,16 @@ weak_register_no_lock(weak_table_t *weak_table, id referent_id,
             // Use lookUpImpOrForward so we can avoid the assert in
             // class_getInstanceMethod, since we intentionally make this
             // callout with the lock held.
+            #if defined(DARLING) && defined(__i386__)
+            BOOL (*allowsWeakReference)(objc_object *, SEL) = 
+            (BOOL(*)(objc_object *, SEL))
+            object_getMethodImplementation((id)referent, 
+                                           @selector(allowsWeakReference));
+            #else
             auto allowsWeakReference = (BOOL(*)(objc_object *, SEL))
             lookUpImpOrForwardTryCache((id)referent, @selector(allowsWeakReference),
                                        referent->getIsa());
+            #endif
             if ((IMP)allowsWeakReference == _objc_msgForward) {
                 return nil;
             }
