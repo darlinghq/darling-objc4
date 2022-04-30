@@ -28,7 +28,9 @@
 
 #include "objc-private.h"
 #include "objc-loadmethod.h"
+#ifndef DARLING
 #include "objc-bp-assist.h"
+#endif
 
 #if TARGET_OS_WIN32
 
@@ -661,11 +663,13 @@ static void static_init()
     for (size_t i = 0; i < count; i++) {
         inits[i]();
     }
+    #if __OBJC2__
     auto offsets = getLibobjcInitializerOffsets(&_mh_dylib_header, &count);
     for (size_t i = 0; i < count; i++) {
         UnsignedInitializer init(offsets[i]);
         init();
     }
+    #endif
 }
 
 

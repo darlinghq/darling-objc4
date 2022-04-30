@@ -83,7 +83,7 @@
 
 #include "objc-private.h"
 
-#if TARGET_OS_OSX
+#if TARGET_OS_OSX && !defined(DARLING)
 #include <Cambria/Traps.h>
 #include <Cambria/Cambria.h>
 #endif
@@ -1117,7 +1117,7 @@ static int _collecting_in_critical(void)
             continue;
 
         // Find out where thread is executing
-#if TARGET_OS_OSX
+#if TARGET_OS_OSX && !defined(DARLING)
         if (oah_is_current_process_translated()) {
             kern_return_t ret = objc_thread_get_rip(threads[count], (uint64_t*)&pc);
             if (ret != KERN_SUCCESS) {
