@@ -16,6 +16,10 @@
 #ifndef LLVM_SUPPORT_MATHEXTRAS_H
 #define LLVM_SUPPORT_MATHEXTRAS_H
 
+#ifdef DARLING
+#include <stdint.h>
+#endif
+
 namespace objc {
 
 // NOTE: The following support functions use the _32/_64 extensions instead of

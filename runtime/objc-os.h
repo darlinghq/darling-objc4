@@ -34,6 +34,10 @@
 #include "objc-config.h"
 #include "objc-private.h"
 
+#ifdef DARLING
+#include <utility>
+#endif
+
 #ifdef __LP64__
 #   define WORD_SHIFT 3UL
 #   define WORD_MASK 7UL
