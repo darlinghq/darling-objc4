@@ -776,6 +776,10 @@ static void defineLockOrder()
     lockdebug_lock_precedes_lock(&classInitLock, &runtimeLock);
 #endif
 
+#if __OBJC2__ && defined(DARLING)
+    lockdebug_lock_precedes_lock(&runtimeLock, &objcMsgLogLock);
+#endif
+
 #if __OBJC2__
     // Runtime operations may occur inside SideTable locks
     // (such as storeWeak calling getMethodImplementation)
