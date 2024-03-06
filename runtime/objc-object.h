@@ -182,7 +182,8 @@ inline void
 isa_t::setClass(Class newCls, UNUSED_WITHOUT_PTRAUTH objc_object *obj)
 {
     // Match the conditional in isa.h.
-#if __has_feature(ptrauth_calls) || TARGET_OS_SIMULATOR
+// DARLING: For the time being, we want to support older arm64 devices that don't support arm64e.
+#if __has_feature(ptrauth_calls) || TARGET_OS_SIMULATOR || DARLING
 #   if ISA_SIGNING_SIGN_MODE == ISA_SIGNING_SIGN_NONE
     // No signing, just use the raw pointer.
     uintptr_t signedCls = (uintptr_t)newCls;
