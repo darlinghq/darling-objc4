@@ -71,6 +71,25 @@
         uintptr_t extra_rc          : 8
 #     define RC_ONE   (1ULL<<56)
 #     define RC_HALF  (1ULL<<7)
+#   elif defined(DARLING) && defined(PLATFORM_MacOSX)
+    // Darling on ARM64 macOS: use same layout as x86_64 to cover
+    // the full macOS virtual address space (MACH_VM_MAX_ADDRESS 0x7FFFFE000000)
+#     define ISA_MASK        0x00007ffffffffff8ULL
+#     define ISA_MAGIC_MASK  0x001f800000000001ULL
+#     define ISA_MAGIC_VALUE 0x001d800000000001ULL
+#     define ISA_HAS_CXX_DTOR_BIT 1
+#     define ISA_BITFIELD                                                      \
+        uintptr_t nonpointer        : 1;                                       \
+        uintptr_t has_assoc         : 1;                                       \
+        uintptr_t has_cxx_dtor      : 1;                                       \
+        uintptr_t shiftcls          : 44; /*MACH_VM_MAX_ADDRESS 0x7FFFFE000000*/ \
+        uintptr_t magic             : 6;                                       \
+        uintptr_t weakly_referenced : 1;                                       \
+        uintptr_t unused            : 1;                                       \
+        uintptr_t has_sidetable_rc  : 1;                                       \
+        uintptr_t extra_rc          : 8
+#     define RC_ONE   (1ULL<<56)
+#     define RC_HALF  (1ULL<<7)
 #   else
 #     define ISA_MASK        0x0000000ffffffff8ULL
 #     define ISA_MAGIC_MASK  0x000003f000000001ULL
