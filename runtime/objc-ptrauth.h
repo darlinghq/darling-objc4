@@ -159,7 +159,13 @@ struct PtrauthStrip {
 
     template <typename T>
     static T *auth(T *ptr, __unused const void *address) {
+#if defined(DARLING) && __arm64__ && !__has_feature(ptrauth_calls)
+        // ptrauth_strip() is a no-op without ptrauth_calls, but arm64e binaries sign these
+        // pointers (e.g. category_t method lists), so remove the signature bits here.
+        return (T *)_objc_darling_strip_signature((uintptr_t)ptr);
+#else
         return ptrauth_strip(ptr, ptrauth_key_process_dependent_data);
+#endif
     }
 };
 
