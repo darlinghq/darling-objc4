@@ -1716,6 +1716,9 @@ struct objc_class : objc_object {
 #   else
         return (Class)ptrauth_strip((void *)superclass, ISA_SIGNING_KEY);
 #   endif
+#elif defined(DARLING) && __arm64__
+        // arm64e binaries store a signed superclass pointer (see objc-ptrauth.h).
+        return (Class)_objc_darling_strip_signature((uintptr_t)superclass);
 #else
         return superclass;
 #endif

@@ -60,6 +60,15 @@
 #define __ptrauth_swift_value_witness_function_pointer(__key)
 #endif
 
+#if defined(DARLING) && __arm64__ && !__has_feature(ptrauth_calls)
+// Darling runs arm64e binaries, whose Objective-C metadata contains pointers signed by dyld,
+// with a runtime built for plain arm64. Such pointers must have their signature bits removed
+// before use (arm64e objc authenticates or strips them). User addresses fit in 48 bits.
+static inline uintptr_t _objc_darling_strip_signature(uintptr_t ptr) {
+    return ptr & 0x0000ffffffffffffULL;
+}
+#endif
+
 // Workaround <rdar://problem/64531063> Definitions of ptrauth_sign_unauthenticated and friends generate unused variables warnings
 #if __has_feature(ptrauth_calls)
 #define UNUSED_WITHOUT_PTRAUTH
