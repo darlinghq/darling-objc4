@@ -1101,6 +1101,9 @@ struct class_ro_t {
                                     ptrauth_blend_discriminator(&baseMethodList,
                                                                 methodListPointerDiscriminator));
         return ptr;
+#elif defined(DARLING) && __arm64__
+        // arm64e binaries store a signed method list pointer (see objc-ptrauth.h).
+        return (method_list_t *)_objc_darling_strip_signature((uintptr_t)baseMethodList);
 #else
         return (method_list_t *)baseMethodList;
 #endif
