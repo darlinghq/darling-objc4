@@ -8008,6 +8008,12 @@ id
 class_createInstance(Class cls, size_t extraBytes)
 {
     if (!cls) return nil;
+    if (slowpath(!cls->isRealized())) {
+        mutex_locker_t lock(runtimeLock);
+        if (!cls->isRealized()) {
+            cls = realizeClassMaybeSwiftAndLeaveLocked(cls, runtimeLock);
+        }
+    }
     return _class_createInstanceFromZone(cls, extraBytes, nil);
 }
 
