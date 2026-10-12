@@ -15,3 +15,6 @@ __ZTSSt9bad_alloc
 __ZTSSt9exception
 __ZTSSt11logic_error
 __ZTSSt12length_error
+
+__ZdlPvm
+__ZdaPvm

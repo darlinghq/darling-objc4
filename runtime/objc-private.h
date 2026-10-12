@@ -886,6 +886,9 @@ inline void* operator new(std::size_t size, const std::nothrow_t&) noexcept(true
 inline void* operator new[](std::size_t size, const std::nothrow_t&) noexcept(true) { return malloc(size); }
 inline void operator delete(void* p) noexcept(true) { free(p); }
 inline void operator delete[](void* p) noexcept(true) { free(p); }
+// C++14 sized deallocation must use the same private allocator as new.
+inline void operator delete(void* p, std::size_t) noexcept(true) { free(p); }
+inline void operator delete[](void* p, std::size_t) noexcept(true) { free(p); }
 inline void operator delete(void* p, const std::nothrow_t&) noexcept(true) { free(p); }
 inline void operator delete[](void* p, const std::nothrow_t&) noexcept(true) { free(p); }
 #pragma clang diagnostic pop
