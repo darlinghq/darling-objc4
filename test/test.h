@@ -257,6 +257,8 @@ inline void operator delete(void*) noexcept(true) { fail("called global operator
 inline void operator delete[](void*) noexcept(true) { fail("called global operator delete[]"); }
 inline void operator delete(void*, const std::nothrow_t&) noexcept(true) { fail("called global operator delete(nothrow)"); }
 inline void operator delete[](void*, const std::nothrow_t&) noexcept(true) { fail("called global operator delete[](nothrow)"); }
+inline void operator delete(void*, std::size_t) noexcept(true) { fail("called global operator delete(sized)"); }
+inline void operator delete[](void*, std::size_t) noexcept(true) { fail("called global operator delete[](sized)"); }
 #pragma clang diagnostic pop
 #endif
 
