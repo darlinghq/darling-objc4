@@ -33,6 +33,10 @@
 #   define DEBUG 0
 #endif
 
+// Must agree with DEBUG; derive it here rather than from the build system, which cannot know
+// whether NDEBUG ends up defined (e.g. distributions that build RelWithDebInfo without it).
+#define OBJC_IS_DEBUG_BUILD DEBUG
+
 // Define SUPPORT_GC_COMPAT=1 to enable compatibility where GC once was.
 // OBJC_NO_GC and OBJC_NO_GC_API in objc-api.h mean something else.
 #if !TARGET_OS_OSX
