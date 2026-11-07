@@ -572,7 +572,7 @@ IMP lookUpImpOrForward(id inst, SEL sel, Class cls, int behavior)
 
     if ((behavior & LOOKUP_RESOLVER)  &&  !triedResolver) {
         methodListLock.unlock();
-        _class_resolveMethod(cls, sel, inst);
+        _class_resolveMethod(inst, sel, cls);
         triedResolver = YES;
         goto retry;
     }
