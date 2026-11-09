@@ -184,21 +184,36 @@ void __objc_error(id rcv, const char *fmt, ...)
 static __attribute__((noreturn, cold))
 void _objc_fatalv(uint64_t reason, uint64_t flags, const char *fmt, va_list ap)
 {
+    // The fatal path often runs because allocation failed (e.g. the bad-alloc
+    // handler), so fall back to stack buffers when the asprintf family fails.
+    char stackbuf1[1024], stackbuf2[1100];
+    bool alloc_failed = false;
+    va_list ap2;
+    va_copy(ap2, ap);
     char *buf1;
-    vasprintf(&buf1, fmt, ap);
+    if (vasprintf(&buf1, fmt, ap) < 0) {
+        vsnprintf(stackbuf1, sizeof(stackbuf1), fmt, ap2);
+        buf1 = stackbuf1;
+        alloc_failed = true;
+    }
+    va_end(ap2);
 
     char *buf2;
-    asprintf(&buf2, "objc[%d]: %s\n", getpid(), buf1);
+    if (asprintf(&buf2, "objc[%d]: %s\n", getpid(), buf1) < 0) {
+        snprintf(stackbuf2, sizeof(stackbuf2), "objc[%d]: %s\n", getpid(), buf1);
+        buf2 = stackbuf2;
+        alloc_failed = true;
+    }
     _objc_syslog(buf2);
 
     if (DebugDontCrash) {
-        char *buf3;
-        asprintf(&buf3, "objc[%d]: HALTED\n", getpid());
-        _objc_syslog(buf3);
+        snprintf(stackbuf2, sizeof(stackbuf2), "objc[%d]: HALTED\n", getpid());
+        _objc_syslog(stackbuf2);
         _Exit(1);
     }
     else {
-        _objc_crashlog(buf1);
+        // Recording the crash log allocates too (and takes a tracked lock in debug builds).
+        if (!alloc_failed) _objc_crashlog(buf1);
         abort_with_reason(OS_REASON_OBJC, reason, buf1, flags);
     }
 }
