@@ -8004,6 +8004,11 @@ _class_createInstanceFromZone(Class cls, size_t extraBytes, void *zone,
     return object_cxxConstructFromClass(obj, cls, construct_flags);
 }
 
+// QUIRK: class_createInstance() accepts a class that nothing has realized yet
+// (for example one reached through its compiler-emitted class symbol) and
+// realizes it, also when several threads make the first allocation at once.
+// Not documented. Evidence: black-box observation on macOS 27.0.1, arm64 and
+// x86_64 (tier 2). Test: raw-allocation.m (raw and concurrent modes).
 static Class realizeClassForAllocation(Class cls)
 {
     if (slowpath(!cls->isRealized())) {
