@@ -70,6 +70,7 @@ set(objc_SRCS
 	objc-sel-table.S
 	Messengers.subproj/objc-msg-arm.S
 	Messengers.subproj/objc-msg-arm64.S
+	Messengers.subproj/objc-retain-release-helpers-arm64.S
 	Messengers.subproj/objc-msg-i386.S
 	Messengers.subproj/objc-msg-x86_64.S
 )
