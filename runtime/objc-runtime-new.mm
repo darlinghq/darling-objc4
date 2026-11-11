@@ -8004,10 +8004,28 @@ _class_createInstanceFromZone(Class cls, size_t extraBytes, void *zone,
     return object_cxxConstructFromClass(obj, cls, construct_flags);
 }
 
+// QUIRK: class_createInstance() accepts a class that nothing has realized yet
+// (for example one reached through its compiler-emitted class symbol) and
+// realizes it, also when several threads make the first allocation at once.
+// Not documented. Evidence: black-box observation on macOS 27.0.1, arm64 and
+// x86_64 (tier 2). Test: raw-allocation.m (raw and concurrent modes).
+static Class realizeClassForAllocation(Class cls)
+{
+    if (slowpath(!cls->isRealized())) {
+        runtimeLock.lock();
+        if (!cls->isRealized()) {
+            cls = realizeClassMaybeSwiftAndLeaveLocked(cls, runtimeLock);
+        }
+        runtimeLock.unlock();
+    }
+    return cls;
+}
+
 id
 class_createInstance(Class cls, size_t extraBytes)
 {
     if (!cls) return nil;
+    cls = realizeClassForAllocation(cls);
     return _class_createInstanceFromZone(cls, extraBytes, nil);
 }
 
@@ -8016,6 +8034,7 @@ id
 _objc_rootAllocWithZone(Class cls, malloc_zone_t *zone __unused)
 {
     // allocWithZone under __OBJC2__ ignores the zone parameter
+    cls = realizeClassForAllocation(cls);
     return _class_createInstanceFromZone(cls, 0, nil,
                                          OBJECT_CONSTRUCT_CALL_BADALLOC);
 }
@@ -8049,6 +8068,7 @@ _object_copyFromZone(id oldObj, size_t extraBytes, void *zone)
     // fixme this doesn't handle C++ ivars correctly (#4619414)
 
     Class cls = oldObj->ISA(/*authenticated*/true);
+    cls = realizeClassForAllocation(cls);
     size_t size;
     id obj = _class_createInstanceFromZone(cls, extraBytes, zone,
                                            OBJECT_CONSTRUCT_NONE, false, &size);
