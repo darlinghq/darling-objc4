@@ -808,7 +808,12 @@ public:
                                                    ptrauth_key_function_pointer, 0);
             return imp;
         }
+#if defined(DARLING) && __arm64__ && !__has_feature(ptrauth_calls)
+        // arm64e binaries sign the IMPs in non-relative method lists (see objc-ptrauth.h).
+        return (IMP)_objc_darling_strip_signature((uintptr_t)big().imp);
+#else
         return big().imp;
+#endif
     }
 
     SEL getSmallNameAsSEL() const {
@@ -1062,7 +1067,13 @@ struct class_ro_t {
 
     _objc_swiftMetadataInitializer swiftMetadataInitializer() const {
         if (flags & RO_HAS_SWIFT_INITIALIZER) {
+#if defined(DARLING) && __arm64__ && !__has_feature(ptrauth_calls)
+            // Signed like method list IMPs in arm64e binaries (see objc-ptrauth.h).
+            return (_objc_swiftMetadataInitializer)_objc_darling_strip_signature(
+                (uintptr_t)_swiftMetadataInitializer_NEVER_USE[0]);
+#else
             return _swiftMetadataInitializer_NEVER_USE[0];
+#endif
         } else {
             return nil;
         }
@@ -1101,6 +1112,9 @@ struct class_ro_t {
                                     ptrauth_blend_discriminator(&baseMethodList,
                                                                 methodListPointerDiscriminator));
         return ptr;
+#elif defined(DARLING) && __arm64__
+        // arm64e binaries store a signed method list pointer (see objc-ptrauth.h).
+        return (method_list_t *)_objc_darling_strip_signature((uintptr_t)baseMethodList);
 #else
         return (method_list_t *)baseMethodList;
 #endif
@@ -1716,6 +1730,9 @@ struct objc_class : objc_object {
 #   else
         return (Class)ptrauth_strip((void *)superclass, ISA_SIGNING_KEY);
 #   endif
+#elif defined(DARLING) && __arm64__
+        // arm64e binaries store a signed superclass pointer (see objc-ptrauth.h).
+        return (Class)_objc_darling_strip_signature((uintptr_t)superclass);
 #else
         return superclass;
 #endif
