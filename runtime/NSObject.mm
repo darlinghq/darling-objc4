@@ -581,7 +581,12 @@ objc_loadWeakRetained(id *location)
         if (cls->isInitialized() || _thisThreadIsInitializingClass(cls)) {
             BOOL (*tryRetain)(id, SEL) = (BOOL(*)(id, SEL))
             #if defined(DARLING) && defined(__i386__)
-                class_getMethodImplementation(cls, @selector(retainWeakReference));
+                // The legacy runtime has no TryCache variant; the weak table
+                // lock is held, which class_getMethodImplementation forbids.
+                lookUpImpOrForward(obj, @selector(retainWeakReference), cls, 0);
+                if ((IMP)tryRetain == _objc_msgForward_impcache) {
+                    tryRetain = (BOOL(*)(id, SEL))_objc_msgForward;
+                }
             #else
                 lookUpImpOrForwardTryCache(obj, @selector(retainWeakReference), cls);
             #endif

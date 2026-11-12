@@ -408,10 +408,17 @@ weak_register_no_lock(weak_table_t *weak_table, id referent_id,
             // class_getInstanceMethod, since we intentionally make this
             // callout with the lock held.
             #if defined(DARLING) && defined(__i386__)
+            // The legacy runtime has no TryCache variant. Call
+            // lookUpImpOrForward directly: unlike
+            // object_getMethodImplementation it does not assert that no
+            // runtime lock is held, and the weak table lock is held here.
             BOOL (*allowsWeakReference)(objc_object *, SEL) = 
             (BOOL(*)(objc_object *, SEL))
-            object_getMethodImplementation((id)referent, 
-                                           @selector(allowsWeakReference));
+            lookUpImpOrForward((id)referent, @selector(allowsWeakReference),
+                               referent->getIsa(), 0);
+            if ((IMP)allowsWeakReference == _objc_msgForward_impcache) {
+                allowsWeakReference = (BOOL(*)(objc_object *, SEL))_objc_msgForward;
+            }
             #else
             auto allowsWeakReference = (BOOL(*)(objc_object *, SEL))
             lookUpImpOrForwardTryCache((id)referent, @selector(allowsWeakReference),
