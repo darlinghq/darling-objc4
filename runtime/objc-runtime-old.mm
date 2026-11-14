@@ -861,6 +861,18 @@ static void really_connect_class(Class cls,
     // Connect superclass pointers.
     set_superclass(cls, supercls, YES);
 
+    // Fragile superclass: the superclass may have grown since this class was
+    // compiled. A class that declares no ivars of its own cannot overlap the
+    // superclass's ivars, so it can safely take the superclass's current
+    // size. Without this, instances are allocated too small for the
+    // superclass's methods. (A class with ivars of its own has them at
+    // offsets fixed at compile time and cannot be adjusted here.)
+    if (supercls  &&  (!cls->ivars  ||  cls->ivars->ivar_count == 0)  &&
+        cls->instance_size < supercls->instance_size)
+    {
+        cls->instance_size = supercls->instance_size;
+    }
+
     // Done!
     cls->info |= CLS_CONNECTED;
 
