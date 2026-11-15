@@ -894,6 +894,11 @@ OBJC_EXPORT id _Nullable
 objc_unsafeClaimAutoreleasedReturnValue(id _Nullable obj)
     OBJC_AVAILABLE(10.11, 9.0, 9.0, 1.0, 2.0);
 
+// Accept a value returned through a +0 autoreleasing convention for use at +1.
+OBJC_EXPORT id _Nullable
+objc_claimAutoreleasedReturnValue(id _Nullable obj)
+    OBJC_AVAILABLE(10.11, 9.0, 9.0, 1.0, 2.0);
+
 OBJC_EXPORT void
 objc_storeStrong(id _Nullable * _Nonnull location, id _Nullable obj)
     OBJC_AVAILABLE(10.7, 5.0, 9.0, 1.0, 2.0);
