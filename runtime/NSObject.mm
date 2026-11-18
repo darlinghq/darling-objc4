@@ -2273,6 +2273,18 @@ __attribute__((objc_nonlazy_class))
 NONLAZY_CLASS_LOAD
 #endif
 
+// objc/NSObject.h declares +load on the root class, so every class answers it
+// and "[super load]" is valid inside any +load, including one in a category
+// that swizzles methods. The method is empty. NONLAZY_CLASS_LOAD above stands
+// in for the nonlazy attribute on old compilers (and then defines this very
+// method); with the attribute it defines nothing, so the method is added here.
+#ifdef DARLING
+#if __has_attribute(objc_nonlazy_class)
++ (void)load {
+}
+#endif
+#endif
+
 + (void)initialize {
 }
 
