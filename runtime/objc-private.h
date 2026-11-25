@@ -229,6 +229,8 @@ private:
     id sidetable_retain_slow(SideTable& table);
 
     uintptr_t sidetable_release(bool locked = false, bool performDealloc = true);
+    // Sends -dealloc, or -_objc_initiateDealloc for a class with custom dealloc initiation.
+    void performLastRelease();
     uintptr_t sidetable_release_slow(SideTable& table, bool performDealloc = true);
 
     bool sidetable_tryRetain();

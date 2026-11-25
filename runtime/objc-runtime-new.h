@@ -80,8 +80,9 @@
 #define RW_CONSTRUCTING       (1<<26)
 // class allocated and registered
 #define RW_CONSTRUCTED        (1<<25)
-// available for use; was RW_FINALIZE_ON_MAIN_THREAD
-// #define RW_24 (1<<24)
+// class or superclass called _class_setCustomDeallocInitiation(): its instances get
+// -_objc_initiateDealloc rather than -dealloc when released for the last time
+#define RW_HAS_CUSTOM_DEALLOC_INITIATION (1<<24)
 // class +load has been called
 #define RW_LOADED             (1<<23)
 #if !SUPPORT_NONPOINTER_ISA
@@ -2013,6 +2014,14 @@ struct objc_class : objc_object {
 
     bool forbidsAssociatedObjects() {
         return (data()->flags & RW_FORBIDS_ASSOCIATED_OBJECTS);
+    }
+
+    bool hasCustomDeallocInitiation() {
+        return (data()->flags & RW_HAS_CUSTOM_DEALLOC_INITIATION);
+    }
+
+    void setHasCustomDeallocInitiation() {
+        data()->setFlags(RW_HAS_CUSTOM_DEALLOC_INITIATION);
     }
 
 #if SUPPORT_NONPOINTER_ISA

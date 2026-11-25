@@ -2729,6 +2729,11 @@ static Class realizeClassWithoutSwift(Class cls, Class previously)
         rw->flags |= RW_FORBIDS_ASSOCIATED_OBJECTS;
     }
 
+    // Subclasses initiate their deallocation as their superclass does.
+    if (supercls && supercls->hasCustomDeallocInitiation()) {
+        rw->flags |= RW_HAS_CUSTOM_DEALLOC_INITIATION;
+    }
+
     // Connect this class to its superclass's subclass lists
     if (supercls) {
         addSubclass(supercls, cls);
@@ -5898,6 +5903,29 @@ class_getVersion(Class cls)
 
 
 /***********************************************************************
+* _class_setCustomDeallocInitiation
+* From now on, the last release of an instance of the class or of any
+* subclass sends it -_objc_initiateDealloc instead of -dealloc. The method
+* deallocates the object when it chooses to, for instance on the main thread
+* with _objc_deallocOnMainThreadHelper(). Instances made before the call are
+* included (observed on macOS 26.7.3; test: tests/custom-dealloc-initiation.m).
+* Locking: acquires runtimeLock
+**********************************************************************/
+void
+_class_setCustomDeallocInitiation(Class cls)
+{
+    if (!cls) return;
+    mutex_locker_t lock(runtimeLock);
+    ASSERT(cls->isRealized());
+    foreach_realized_class_and_subclass(cls, [](Class c){
+        if (c->hasCustomDeallocInitiation()) return false;
+        c->setHasCustomDeallocInitiation();
+        return true;
+    });
+}
+
+
+/***********************************************************************
 * class_setVersion
 * fixme
 * Locking: none
@@ -7566,7 +7594,7 @@ static void objc_initializeClassPair_internal(Class superclass, const char *name
     cls_ro_w->flags = 0;
     meta_ro_w->flags = RO_META;
     if (superclass) {
-        uint32_t flagsToCopy = RW_FORBIDS_ASSOCIATED_OBJECTS;
+        uint32_t flagsToCopy = RW_FORBIDS_ASSOCIATED_OBJECTS | RW_HAS_CUSTOM_DEALLOC_INITIATION;
         cls_rw_w->flags |= superclass->data()->flags & flagsToCopy;
         cls_ro_w->instanceStart = superclass->unalignedInstanceSize();
         meta_ro_w->instanceStart = superclass->ISA()->unalignedInstanceSize();

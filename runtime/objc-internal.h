@@ -1054,6 +1054,14 @@ OBJC_EXPORT void
 _objc_deallocOnMainThreadHelper(void * _Nullable context)
     OBJC_AVAILABLE(10.7, 5.0, 9.0, 1.0, 2.0);
 
+#if __OBJC2__
+// The last release of an instance of the class, or of a subclass, sends it
+// -_objc_initiateDealloc instead of -dealloc; the method deallocates the
+// object, for instance with _objc_deallocOnMainThreadHelper().
+OBJC_EXPORT void
+_class_setCustomDeallocInitiation(Class _Nonnull cls);
+#endif
+
 #if __OBJC__
 // Declarations for internal methods used for custom weak reference
 // implementations. These declarations ensure that the compiler knows

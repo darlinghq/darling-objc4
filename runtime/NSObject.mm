@@ -1763,6 +1763,18 @@ objc_object::sidetable_setWeaklyReferenced_nolock()
 }
 
 
+void
+objc_object::performLastRelease()
+{
+#if __OBJC2__
+    if (slowpath(ISA()->hasCustomDeallocInitiation())) {
+        ((void(*)(objc_object *, SEL))objc_msgSend)(this, @selector(_objc_initiateDealloc));
+        return;
+    }
+#endif
+    ((void(*)(objc_object *, SEL))objc_msgSend)(this, @selector(dealloc));
+}
+
 // rdar://20206767
 // return uintptr_t instead of bool so that the various raw-isa 
 // -release paths all return zero in eax
@@ -1790,7 +1802,7 @@ objc_object::sidetable_release(bool locked, bool performDealloc)
     }
     table.unlock();
     if (do_dealloc  &&  performDealloc) {
-        ((void(*)(objc_object *, SEL))objc_msgSend)(this, @selector(dealloc));
+        performLastRelease();
     }
     return do_dealloc;
 }

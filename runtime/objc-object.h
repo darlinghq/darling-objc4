@@ -897,7 +897,7 @@ deallocate:
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     if (performDealloc) {
-        ((void(*)(objc_object *, SEL))objc_msgSend)(this, @selector(dealloc));
+        performLastRelease();
     }
     return true;
 }
